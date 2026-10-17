@@ -1,5 +1,8 @@
 package eu.kanade.tachiyomi.extension.en.comix
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.SharedPreferences
 import android.webkit.WebResourceResponse
 import androidx.preference.EditTextPreference
@@ -828,9 +831,10 @@ abstract class Comix :
             // The capture script also goes into the page itself: script injection from outside may not run on every
             // WebView, while scripts in the page do (the chapter scripts are inline and run on iPhone)
             val bootstrapScript = """
-                window.$passPayloadName = payload => window.$bridgeName.post(payload);
-                window.$rejectName = message => window.$errorBridgeName.post(message);
-                window.$touchName = points => window.$touchBridgeName.postMessage(points.join(","));
+                ${bridgeQueueScript(probeBridgeName)}
+                window.$passPayloadName = payload => window.$BRIDGE_SEND('$bridgeName', 'post', payload);
+                window.$rejectName = message => window.$BRIDGE_SEND('$errorBridgeName', 'post', message);
+                window.$touchName = points => window.$BRIDGE_SEND('$touchBridgeName', 'postMessage', points.join(","));
                 ${apiProbeScript(probeBridgeName)}
                 ${pageScript(passPayloadName, rejectName, touchName)}
                 ${captureScript.orEmpty()}
@@ -843,10 +847,46 @@ abstract class Comix :
         }
     }
 
+    // On iPhone the app's bridge objects can show up after the page's first scripts run, and a message sent before
+    // then is lost. Queue every message and resend until its bridge exists.
+    private fun bridgeQueueScript(probeBridgeName: String) = """
+        (function () {
+            const queue = [];
+            const started = Date.now();
+            let bridgeReported = false;
+            const flush = () => {
+                for (let i = 0; i < queue.length;) {
+                    const [name, method, message] = queue[i];
+                    const target = window[name];
+                    if (target && typeof target[method] === 'function') {
+                        queue.splice(i, 1);
+                        try { target[method](message); } catch (e) {}
+                    } else {
+                        i++;
+                    }
+                }
+            };
+            window.$BRIDGE_SEND = (name, method, message) => {
+                queue.push([name, method, message]);
+                flush();
+            };
+            const probe = window['$probeBridgeName'];
+            window.$BRIDGE_SEND('$probeBridgeName', 'post', 'script running, bridge ' + (probe ? 'ready' : 'not ready yet'));
+            setInterval(() => {
+                const ready = window['$probeBridgeName'];
+                if (!bridgeReported && ready && typeof ready.post === 'function') {
+                    bridgeReported = true;
+                    queue.unshift(['$probeBridgeName', 'post', 'bridge ready after ' + (Date.now() - started) + ' ms (page ' + document.readyState + ')']);
+                }
+                flush();
+            }, $BRIDGE_RETRY_MS);
+        })();
+    """.trimIndent()
+
     // Probe: report the status of the site's own API calls (and page errors) from inside the WebView
     private fun apiProbeScript(probeBridgeName: String) = """
         (function () {
-            const report = text => { try { window.$probeBridgeName.post(text); } catch (e) {} };
+            const report = text => window.$BRIDGE_SEND('$probeBridgeName', 'post', text);
             const describe = (rawUrl, status, body) => {
                 try {
                     const path = new URL(rawUrl || '', location.origin).pathname;
@@ -910,6 +950,21 @@ abstract class Comix :
             summary = probe
             dialogTitle = "Diagnostics"
             text = probe
+        }.let(screen::addPreference)
+
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_PROBE_COPY
+            title = "Copy diagnostics"
+            summary = "Tap to copy the diagnostics text"
+            setDefaultValue(false)
+            setOnPreferenceChangeListener { preference, _ ->
+                preference.summary = runCatching {
+                    val clipboard = screen.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Comix K diagnostics", probeSummary()))
+                    "Copied. Paste it into the chat."
+                }.getOrElse { "Copy is not supported here: ${it.message}" }
+                false
+            }
         }.let(screen::addPreference)
 
         SwitchPreferenceCompat(screen.context).apply {
@@ -1093,6 +1148,9 @@ abstract class Comix :
         private const val PREF_PROBE_LAST_REQUEST = "pref_probe_last_request"
         private const val PREF_PROBE_VIEW = "pref_probe_view"
         private const val PREF_PROBE_WEBVIEW = "pref_probe_webview"
+        private const val PREF_PROBE_COPY = "pref_probe_copy"
+        private const val BRIDGE_SEND = "__comixKSend"
+        private const val BRIDGE_RETRY_MS = 200
         private const val WEBVIEW_LOG_SIZE = 14
         private val SITE_HOSTS = setOf("comix.to", "comix.ws")
 
