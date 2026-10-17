@@ -3,6 +3,7 @@ import hashlib
 import html
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -13,12 +14,13 @@ from google.protobuf import json_format
 
 # Artifacts downloaded from the build jobs: one APK per extension plus the source metadata JSON
 # emitted by each assembleRelease.
-ARTIFACTS_DIR = Path.home() / "apk-artifacts"
+ARTIFACTS_DIR = Path(os.environ.get("ARTIFACTS_DIR", Path.home() / "apk-artifacts"))
 
 # The checked-out `repo` branch we publish into (the working directory).
 REPO_DIR = Path.cwd()
 
-ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/keiyoushi/extensions-source@main"
+ICON_BASE_URL = f"https://cdn.jsdelivr.net/gh/{REPO_NAME}@main"
+SIGNING_KEY = os.environ["SIGNING_KEY_SHA256"]
 RELEASE_BASE_URL = f"https://github.com/{REPO_NAME}/releases/download"
 ASSET_LIMIT = 495  # Actual limit is 1000 but we upload 2 items per extension.
 UPLOAD_CHUNK_SIZE = 80
@@ -32,8 +34,11 @@ current_sha_short = current_sha[:7]
 # from the source tree, which a diff against the empty tree can't see.
 full_rebuild = sys.argv[3] == "true"
 
-with REPO_DIR.joinpath("index.json").open() as f:
-    remote_proto = json_format.Parse(f.read(), index_pb2.Index())
+remote_proto = index_pb2.Index()
+index_path = REPO_DIR.joinpath("index.json")
+if index_path.exists():
+    with index_path.open() as f:
+        json_format.Parse(f.read(), remote_proto)
 
 remote_extensions = {
     ext.packageName: ext for ext in remote_proto.extensionList.extensions
@@ -189,13 +194,10 @@ final_extensions.extend(ext for ext, _, _, _, _ in new_extensions)
 final_extensions.sort(key=lambda ext: ext.packageName)
 
 index = index_pb2.Index(
-    name="Keiyoushi",
-    badgeLabel="KEI",
-    signingKey="9add655a78e96c4ec7a53ef89dccb557cb5d767489fac5e785d671a5a75d4da2",
-    contact=index_pb2.Contact(
-        website="https://keiyoushi.github.io",
-        discord="https://discord.gg/3FbCpdKbdY",
-    ),
+    name="Kenji",
+    badgeLabel="K",
+    signingKey=SIGNING_KEY,
+    contact=index_pb2.Contact(website=f"https://github.com/{REPO_NAME}"),
     extensionList=index_pb2.ExtensionList(extensions=final_extensions),
 )
 
@@ -210,6 +212,21 @@ with REPO_DIR.joinpath("index.json").open("w", encoding="utf-8") as f:
 
 with REPO_DIR.joinpath("index.pb").open("wb") as f:
     f.write(gzip.compress(index.SerializeToString(deterministic=True), mtime=0))
+
+with REPO_DIR.joinpath("repo.json").open("w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "index_v2": f"https://github.com/{REPO_NAME}/raw/repo/index.pb",
+            "meta": {
+                "name": "Kenji",
+                "website": f"https://github.com/{REPO_NAME}",
+                "signingKeyFingerprint": SIGNING_KEY,
+            },
+        },
+        f,
+        indent=2,
+    )
+    f.write("\n")
 
 with release_assets_path.open("w", encoding="utf-8") as f:
     json.dump(updated_release_assets, f, indent=2, sort_keys=True)
@@ -255,7 +272,7 @@ def create_release(tag: str):
         "--title",
         f"Repository Update {tag}",
         "--notes",
-        f"Automated update from keiyoushi/extensions-source@{current_sha}",
+        f"Automated update from {REPO_NAME}@{current_sha}",
     )
 
 
