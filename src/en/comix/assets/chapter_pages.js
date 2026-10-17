@@ -20,7 +20,11 @@
 
     const start = () => read().catch((e) => {
         const status = e && e.response && e.response.status;
-        reject(`Chapter pages failed: ${status ? `HTTP ${status}` : e && e.message || e}`);
+        const data = e && e.response && e.response.data;
+        const reply = data === undefined || data === null
+            ? ""
+            : ` · reply: ${(typeof data === "string" ? data : JSON.stringify(data)).slice(0, 200)}`;
+        reject(`Chapter pages failed: ${status ? `HTTP ${status}` : e && e.message || e}${reply}`);
     });
     if (document.readyState === "complete") start();
     else window.addEventListener("load", start, { once: true });
