@@ -133,6 +133,8 @@ abstract class Comix :
         return " · ua: ${shortUserAgent(header("User-Agent").orEmpty())} · cf pass: ${if (hasPass) "yes" else "no"}"
     }
 
+    private fun Long.toLocalDate() = java.time.Instant.ofEpochMilli(this).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+
     // Short enough to read on a phone: "iPhone Safari 18.7.8 (app)"
     private fun shortUserAgent(ua: String): String {
         if (!ua.isIphoneSafari()) return ua.take(SHORT_UA_LENGTH)
@@ -856,14 +858,17 @@ abstract class Comix :
             val html = document.clone().apply {
                 head().appendElement("script").append(bootstrapScript)
             }.outerHtml()
-            // Fix attempt: the hidden WebView may not share the app's cookies, so give it the Cloudflare pass first
+            // Fix attempt: the hidden WebView may not share the app's cookies, so give it the Cloudflare pass first.
+            // The app can hold two passes (old and new); copy only the newest of each cookie name.
             val pageUrl = document.location().toHttpUrl()
             runCatching {
                 val cookieManager = CookieManager.getInstance()
-                val cookies = client.cookieJar.loadForRequest(pageUrl)
-                cookies.forEach { cookieManager.setCookie(pageUrl.toString(), it.toString()) }
+                val all = client.cookieJar.loadForRequest(pageUrl)
+                logWebView("app cookies: " + all.joinToString(", ") { "${it.name}@${it.domain}${if (it.hostOnly) "" else "+subdomains"} until ${it.expiresAt.toLocalDate()}" })
+                val newest = all.groupBy { it.name }.values.map { sameName -> sameName.maxBy { it.expiresAt } }
+                newest.forEach { cookieManager.setCookie(pageUrl.toString(), it.toString()) }
                 cookieManager.flush()
-                cookies.map { it.name }
+                newest.map { it.name }
             }.fold(
                 { logWebView("cookies copied: ${it.joinToString(",").ifEmpty { "none" }}") },
                 { logWebView("cookie copy failed: ${it.message}") },
@@ -897,6 +902,7 @@ abstract class Comix :
             };
             const probe = window['$probeBridgeName'];
             window.$BRIDGE_SEND('$probeBridgeName', 'post', 'script running, bridge ' + (probe ? 'ready' : 'not ready yet'));
+            window.$BRIDGE_SEND('$probeBridgeName', 'post', 'page ua ends: ' + navigator.userAgent.slice(-$PAGE_UA_TAIL));
             setInterval(() => {
                 const ready = window['$probeBridgeName'];
                 if (!bridgeReported && ready && typeof ready.post === 'function') {
@@ -1198,7 +1204,8 @@ abstract class Comix :
         private const val BRIDGE_RETRY_MS = 200
         private const val LOAD_PROBE_DELAY_MS = 1500
         private const val SHORT_UA_LENGTH = 60
-        private const val WEBVIEW_LOG_SIZE = 14
+        private const val PAGE_UA_TAIL = 60
+        private const val WEBVIEW_LOG_SIZE = 24
         private val SITE_HOSTS = setOf("comix.to", "comix.ws")
 
         private const val DEFAULT_CONTENT_RATING = "suggestive"
