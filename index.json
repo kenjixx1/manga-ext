@@ -1,0 +1,37 @@
+{
+  "name": "Kenji",
+  "badgeLabel": "K",
+  "signingKey": "aafbf481ef44ca62d62584992384d57c805952222ca9066bd87e6f731f6dac4e",
+  "contact": {
+    "website": "https://github.com/kenjixx1/manga-ext"
+  },
+  "extensionList": {
+    "extensions": [
+      {
+        "name": "Comix K",
+        "packageName": "eu.kanade.tachiyomi.extension.en.comixk",
+        "resources": {
+          "apkUrl": "https://github.com/kenjixx1/manga-ext/releases/download/d5b887a/tachiyomi-en.comixk-v1.6.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/kenjixx1/manga-ext@main/src/en/comix/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/kenjixx1/manga-ext/releases/download/d5b887a/tachiyomi-en.comixk-v1.6.1.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "106001",
+        "versionName": "1.6.1",
+        "contentWarning": "CONTENT_WARNING_MIXED",
+        "sources": [
+          {
+            "id": "3285188625626617474",
+            "name": "Comix K",
+            "language": "en",
+            "homeUrl": "https://comix.to",
+            "mirrorUrls": [
+              "https://comix.to",
+              "https://comix.ws"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
