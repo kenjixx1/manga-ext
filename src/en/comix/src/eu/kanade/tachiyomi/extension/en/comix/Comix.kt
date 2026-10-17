@@ -144,7 +144,8 @@ abstract class Comix :
         val lastRequest = preferences.getString(PREF_PROBE_LAST_REQUEST, null) ?: "none yet"
         return "cf pass now: $pass\n" +
             "ua now: ${headers["User-Agent"].orEmpty()}\n" +
-            "last request: $lastRequest"
+            "last request: $lastRequest\n" +
+            "webview: ${preferences.getString(PREF_PROBE_WEBVIEW, null) ?: "none yet"}"
     }
 
     // Comix blocks chapter-list paging that is too fast or evenly spaced
@@ -733,14 +734,26 @@ abstract class Comix :
             " · puzzle page: ${if (sawPuzzlePage.get()) "yes" else "no"}" +
             " · ua: ${if (headers["User-Agent"] == IPHONE_SAFARI_UA) "forced" else "app"}"
         val (bridgeName, errorBridgeName, passPayloadName, rejectName) = List(4) { randomName() }
-        val (touchBridgeName, touchName) = List(2) { randomName() }
+        val (touchBridgeName, touchName, probeBridgeName) = List(3) { randomName() }
+        // Probe: the app can give up on a run before it rejects, so log each step to the settings screen as it happens
+        val webViewEvents = mutableListOf<String>()
+        fun logWebView(event: String) {
+            val events = synchronized(webViewEvents) {
+                webViewEvents += event
+                if (webViewEvents.size > WEBVIEW_LOG_SIZE) webViewEvents.removeAt(0)
+                webViewEvents.joinToString(" › ")
+            }
+            val time = LocalTime.now().withNano(0)
+            preferences.edit().putString(PREF_PROBE_WEBVIEW, "$time ${document.location().toHttpUrl().encodedPath} · loads: ${checkedLoads.get()} · $events").apply()
+        }
+        logWebView("start")
         return runWebView(timeout = Duration.INFINITE) {
             userAgent = headers["User-Agent"].orEmpty()
             blockImages = true
 
             val emptyResponse = WebResourceResponse("text/plain", "utf-8", Buffer().inputStream())
             interceptRequest { request ->
-                checkedLoads.incrementAndGet()
+                if (checkedLoads.incrementAndGet() == 1) logWebView("first load seen")
                 val requestUrl = request.url?.toString()?.toHttpUrlOrNull()
                     ?: return@interceptRequest emptyResponse
                 if (UNUSED_SITE_PATHS.any(requestUrl.encodedPath::startsWith)) return@interceptRequest emptyResponse
@@ -771,8 +784,17 @@ abstract class Comix :
                 if (allowed) null else emptyResponse
             }
 
-            jsBridge(bridgeName) { resolve(it) }
-            jsBridge(errorBridgeName) { reject(Exception(it + probeInfo())) }
+            jsBridge(bridgeName) {
+                logWebView("captured ${it.length} chars")
+                resolve(it)
+            }
+            jsBridge(errorBridgeName) {
+                logWebView("rejected: $it")
+                reject(Exception(it + probeInfo()))
+            }
+            jsBridge(probeBridgeName) { logWebView(it) }
+            onPageStarted { logWebView("page started") }
+            onPageFinished { logWebView("page finished") }
             webMessageBridge(touchBridgeName, setOf(document.location().toHttpUrl().run { "$scheme://$host" })) { message ->
                 val points = message.split(',').mapNotNull { it.toFloatOrNull() }
                 when (points.size) {
@@ -796,17 +818,22 @@ abstract class Comix :
                         dataRequests.get() == 0 -> "Site never requested the data"
                         else -> "Nothing read from ${dataRequests.get()} site requests"
                     }
+                    logWebView("timed out: $message")
                     reject(Exception(message + probeInfo()))
                 } else if (captureScript != null) {
                     evaluateJs(captureScript)
                 }
             }
 
+            // The capture script also goes into the page itself: script injection from outside may not run on every
+            // WebView, while scripts in the page do (the chapter scripts are inline and run on iPhone)
             val bootstrapScript = """
                 window.$passPayloadName = payload => window.$bridgeName.post(payload);
                 window.$rejectName = message => window.$errorBridgeName.post(message);
                 window.$touchName = points => window.$touchBridgeName.postMessage(points.join(","));
+                ${apiProbeScript(probeBridgeName)}
                 ${pageScript(passPayloadName, rejectName, touchName)}
+                ${captureScript.orEmpty()}
             """.trimIndent()
             // After the site's own head scripts
             val html = document.clone().apply {
@@ -815,6 +842,47 @@ abstract class Comix :
             loadData(document.location(), html)
         }
     }
+
+    // Probe: report the status of the site's own API calls (and page errors) from inside the WebView
+    private fun apiProbeScript(probeBridgeName: String) = """
+        (function () {
+            const report = text => { try { window.$probeBridgeName.post(text); } catch (e) {} };
+            const describe = (rawUrl, status, body) => {
+                try {
+                    const path = new URL(rawUrl || '', location.origin).pathname;
+                    if (!path.startsWith('/api/')) return;
+                    report('api ' + path + ' ' + status + (status >= 400 ? ' ' + String(body).slice(0, 100) : ''));
+                } catch (e) {}
+            };
+            const originalFetch = window.fetch;
+            if (typeof originalFetch === 'function') {
+                window.fetch = function () {
+                    return originalFetch.apply(this, arguments).then(response => {
+                        response.clone().text().then(body => describe(response.url, response.status, body)).catch(() => {});
+                        return response;
+                    }, error => {
+                        report('api fetch error ' + error);
+                        throw error;
+                    });
+                };
+            }
+            const originalOpen = XMLHttpRequest.prototype.open;
+            const originalSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function (method, url) {
+                this.__probeUrl = String(url || '');
+                return originalOpen.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function () {
+                this.addEventListener('loadend', function () {
+                    let body = '';
+                    try { body = this.responseText; } catch (e) {}
+                    describe(this.__probeUrl, this.status, body);
+                });
+                return originalSend.apply(this, arguments);
+            };
+            window.addEventListener('error', event => report('js error ' + (event.message || '')));
+        })();
+    """.trimIndent()
 
     private fun randomName() = (1..(10..20).random())
         .map { (('a'..'z') + ('A'..'Z')).random() }
@@ -1024,6 +1092,8 @@ abstract class Comix :
         private const val PREF_SOLVE_CAPTCHA = "pref_solve_captcha"
         private const val PREF_PROBE_LAST_REQUEST = "pref_probe_last_request"
         private const val PREF_PROBE_VIEW = "pref_probe_view"
+        private const val PREF_PROBE_WEBVIEW = "pref_probe_webview"
+        private const val WEBVIEW_LOG_SIZE = 14
         private val SITE_HOSTS = setOf("comix.to", "comix.ws")
 
         private const val DEFAULT_CONTENT_RATING = "suggestive"
