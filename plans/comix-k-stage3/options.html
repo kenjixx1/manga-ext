@@ -1,0 +1,174 @@
+<title>Comix K Stage 3 Options</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Same visual family as the Stage 2 plan page: cool paper, ink, signal orange = blocked, green = passes. */
+:root {
+  --bg: #f4f6f8; --surface: #ffffff; --ink: #18212b; --muted: #56636f; --line: #d5dbe1;
+  --blue: #2a63a8; --blue-soft: #e3ecf7; --signal: #c2470e; --signal-soft: #fbe9df;
+  --green: #2e7d4f; --green-soft: #e1f2e7; --amber: #9a6a00; --amber-soft: #fbf1d6;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #19212a; --ink: #e6ebf0; --muted: #9aa7b3; --line: #2c3742;
+    --blue: #7fb0ea; --blue-soft: #1d2d40; --signal: #ff8a50; --signal-soft: #3a2218;
+    --green: #6fcf97; --green-soft: #17301f; --amber: #e8b94a; --amber-soft: #352a10; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19212a; --ink: #e6ebf0; --muted: #9aa7b3; --line: #2c3742;
+  --blue: #7fb0ea; --blue-soft: #1d2d40; --signal: #ff8a50; --signal-soft: #3a2218;
+  --green: #6fcf97; --green-soft: #17301f; --amber: #e8b94a; --amber-soft: #352a10; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+main { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); }
+h2 { font-size: 1.45rem; }
+h3 { font-size: 1.08rem; }
+p { margin: 0; max-width: 68ch; }
+code { font-family: var(--mono); font-size: 0.84em; background: var(--blue-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+section { display: flex; flex-direction: column; gap: 16px; }
+.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+ul.plain { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px; }
+svg text { font-family: var(--body); fill: var(--ink); }
+svg .small { font-size: 12px; fill: var(--muted); }
+svg .mono { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); }
+svg .head { font-family: var(--display); font-size: 15px; font-weight: 700; }
+svg .box { fill: var(--blue-soft); stroke: var(--blue); stroke-width: 1.2; }
+svg .good { fill: var(--green-soft); stroke: var(--green); stroke-width: 1.2; }
+svg .bad { fill: var(--signal-soft); stroke: var(--signal); stroke-width: 1.2; }
+svg .line-good { stroke: var(--green); stroke-width: 2; fill: none; }
+svg .line-bad { stroke: var(--signal); stroke-width: 2; fill: none; stroke-dasharray: 6 5; }
+svg .lbl-good { fill: var(--green); font-size: 12.5px; font-weight: 600; }
+svg .lbl-bad { fill: var(--signal); font-size: 12.5px; font-weight: 600; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card.pick { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.tag { align-self: flex-start; font-family: var(--mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
+.tag.rec { background: var(--green-soft); color: var(--green); font-weight: 600; }
+.tag.no { background: var(--signal-soft); color: var(--signal); }
+.tag.maybe { background: var(--amber-soft); color: var(--amber); }
+.meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 0.9rem; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; }
+.probe { display: flex; flex-direction: column; gap: 10px; }
+.probe div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.probe b { font-family: var(--mono); font-size: 0.82rem; color: var(--blue); }
+footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <span class="eyebrow">manga-ext · design choice · 2026-10-18</span>
+    <h1>Comix K Stage 3 Options</h1>
+    <p><b>The hidden browser view inside Tachimanga can never reach Comix by itself on iPhone. To fix browse and chapters, the site must be reached only through the app's own requests.</b></p>
+  </header>
+
+  <section aria-labelledby="why">
+    <span class="eyebrow">What we proved with versions 1.6.3 to 1.6.8</span>
+    <h2 id="why">Why it breaks</h2>
+    <div class="scroll">
+      <svg viewBox="0 0 900 300" width="900" height="300" role="img" aria-label="The app sends the Safari name tag and passes. The hidden browser view sends the iPhone built-in name tag and is blocked by Cloudflare and by Comix's third-party app check.">
+        <defs>
+          <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+          <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--signal)"/></marker>
+        </defs>
+        <rect class="box" x="10" y="20" width="250" height="110" rx="10"/>
+        <text class="head" x="26" y="48">App's own requests</text>
+        <text class="small" x="26" y="70">name tag: Safari 18.7.8</text>
+        <text class="small" x="26" y="88">(your Mobile Safari setting)</text>
+        <text class="mono" x="26" y="112">/browse → HTTP 200</text>
+
+        <rect class="bad" x="10" y="170" width="250" height="110" rx="10"/>
+        <text class="head" x="26" y="198">Hidden browser view</text>
+        <text class="small" x="26" y="220">name tag: iPhone built-in</text>
+        <text class="small" x="26" y="238">(Tachimanga ignores ours)</text>
+        <text class="mono" x="26" y="262">every request → 403</text>
+
+        <rect class="box" x="400" y="95" width="170" height="110" rx="10"/>
+        <text class="head" x="416" y="125">Cloudflare</text>
+        <text class="small" x="416" y="147">pass works only with</text>
+        <text class="small" x="416" y="165">the name tag that</text>
+        <text class="small" x="416" y="183">earned it (Safari)</text>
+
+        <rect class="good" x="690" y="95" width="200" height="110" rx="10"/>
+        <text class="head" x="706" y="125">Comix</text>
+        <text class="small" x="706" y="147">blocks the built-in name</text>
+        <text class="small" x="706" y="165">tag as "third-party app"</text>
+        <text class="small" x="706" y="183">(your Default test)</text>
+
+        <path class="line-good" d="M260,75 C330,75 340,120 396,128" marker-end="url(#g)"/>
+        <text class="lbl-good" x="282" y="66">passes</text>
+        <path class="line-good" d="M570,140 L686,140" marker-end="url(#g)"/>
+        <path class="line-bad" d="M260,225 C330,225 340,180 396,172" marker-end="url(#r)"/>
+        <text class="lbl-bad" x="282" y="252">blocked: wrong name tag</text>
+        <path class="line-bad" d="M260,262 C520,300 700,290 760,208" marker-end="url(#r)"/>
+        <text class="lbl-bad" x="520" y="292">and Comix would block it too</text>
+      </svg>
+    </div>
+    <ul class="plain">
+      <li>The manga list and the chapter pages come from Comix's data API. Each call needs a one-time token.</li>
+      <li>Only the site's own code can make that token. It lives in a 215 KB file written in scrambled form on purpose, so Comix K cannot rebuild it.</li>
+      <li>So the site's code must run in a browser view, but its network requests must go through the app. The app is the only path that passes.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="opts">
+    <span class="eyebrow">The choice</span>
+    <h2 id="opts">3 ways forward</h2>
+    <div class="cards">
+      <article class="card pick">
+        <span class="tag rec">recommended</span>
+        <h3>A · Route the hidden view through the app</h3>
+        <p>The site's code still runs in the hidden view. Every file and data request it makes is handed to the app, which fetches it with the Safari name tag and the pass, then hands the answer back.</p>
+        <dl class="meta">
+          <dt>Fixes</dt><dd>Browse, search, chapter list, chapter pages</dd>
+          <dt>Risk</dt><dd>Needs 3 iPhone abilities we have not tested yet (see probe below)</dd>
+          <dt>Size</dt><dd>Large. A new piece of about 200 lines. Planned and reviewed like Stage 2.</dd>
+        </dl>
+      </article>
+      <article class="card">
+        <span class="tag maybe">do anyway, costs 10 minutes</span>
+        <h3>B · Report the bug to Tachimanga</h3>
+        <p>Their hidden browser view ignores the name tag an extension sets. If they fix it, keiyoushi's normal Comix code works on iPhone with Mobile Safari, and no big change is needed.</p>
+        <dl class="meta">
+          <dt>Fixes</dt><dd>Everything, for every Comix user on iPhone</dd>
+          <dt>Risk</dt><dd>We wait. No control over when, or if, they fix it.</dd>
+          <dt>Size</dt><dd>One clear bug report. I write it, you send it.</dd>
+        </dl>
+      </article>
+      <article class="card">
+        <span class="tag no">not recommended</span>
+        <h3>C · Rebuild the token in Comix K</h3>
+        <p>Decode the scrambled token code and copy it into the extension, so Comix K calls the data API directly with no browser view.</p>
+        <dl class="meta">
+          <dt>Fixes</dt><dd>Everything, while it lasts</dd>
+          <dt>Risk</dt><dd>The site changes its code often. Comix changed 5 times in 5 days. Each change breaks this.</dd>
+          <dt>Size</dt><dd>Very large and fragile</dd>
+        </dl>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="probe">
+    <span class="eyebrow">Before building A</span>
+    <h2 id="probe">One small test build first (1.7.0)</h2>
+    <p>Option A depends on 3 things the iPhone hidden view may or may not support. One test build checks all 3 at once, and you send me one Diagnostics text. If any one fails, A is not possible, and we keep B.</p>
+    <div class="probe">
+      <div><b>1 · app → page messages</b>Can the app send an answer back into the page? A needs this to return each fetched file and data reply.</div>
+      <div><b>2 · code from the app</b>Will the hidden view run the site's code when the app supplies it, instead of loading it from Comix?</div>
+      <div><b>3 · the token, offline</b>Does the site's code still make its token when every network request is handed to the app?</div>
+    </div>
+  </section>
+
+  <footer>Evidence: Diagnostics from Comix K 1.6.3 to 1.6.8 on iPhone, plus tests on your Mac against comix.ws (2026-10-18).</footer>
+</main>
