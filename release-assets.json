@@ -1,12 +1,12 @@
 {
   "eu.kanade.tachiyomi.extension.en.comixk": {
     "apk": {
-      "name": "tachiyomi-en.comixk-v1.6.7.apk",
-      "sha256": "132a32e43c5a0991ce0e0f08c0c7d5789181709f337481a3763ddb0b95dcab7b"
+      "name": "tachiyomi-en.comixk-v1.6.8.apk",
+      "sha256": "4e008be7cf061fe16542cfa491a4c63b9098d6b7d608407cecb69ca4a9c5e9e3"
     },
     "jar": {
-      "name": "tachiyomi-en.comixk-v1.6.7.jar",
-      "sha256": "237c8c70d49c79665611fc3c29667a8ce9be109760235b2687b27067f9702a4e"
+      "name": "tachiyomi-en.comixk-v1.6.8.jar",
+      "sha256": "8af22f8b394ebf900d0bf014383508850b8174afb24aa7c8e2ae4be9ccfbb07c"
     }
   }
 }
