@@ -130,7 +130,14 @@ abstract class Comix :
 
     private fun Request.cloudflareProbeInfo(): String {
         val hasPass = client.cookieJar.loadForRequest(url).any { it.name == "cf_clearance" }
-        return " · sent ua: ${header("User-Agent").orEmpty()} · cf pass: ${if (hasPass) "yes" else "no"}"
+        return " · ua: ${shortUserAgent(header("User-Agent").orEmpty())} · cf pass: ${if (hasPass) "yes" else "no"}"
+    }
+
+    // Short enough to read on a phone: "iPhone Safari 18.7.8 (app)"
+    private fun shortUserAgent(ua: String): String {
+        if (!ua.isIphoneSafari()) return ua.take(SHORT_UA_LENGTH)
+        val version = ua.substringAfter("Version/", "").substringBefore(' ').ifEmpty { "?" }
+        return "iPhone Safari $version (${if (ua == IPHONE_SAFARI_UA) "forced" else "app"})"
     }
 
     private fun recordProbe(text: String) {
@@ -138,15 +145,22 @@ abstract class Comix :
         preferences.edit().putString(PREF_PROBE_LAST_REQUEST, "$time $text").apply()
     }
 
-    private fun probeSummary(): String {
+    // Three short parts, so each fits in the app's text box
+    private fun probeParts(): List<String> {
         val siteUrl = baseUrl.toHttpUrl()
         val pass = runCatching { client.cookieJar.loadForRequest(siteUrl).any { it.name == "cf_clearance" } }
             .fold({ if (it) "yes" else "no" }, { "error: ${it.message}" })
         val lastRequest = preferences.getString(PREF_PROBE_LAST_REQUEST, null) ?: "none yet"
-        return "cf pass now: $pass\n" +
-            "ua now: ${headers["User-Agent"].orEmpty()}\n" +
-            "last request: $lastRequest\n" +
-            "webview: ${preferences.getString(PREF_PROBE_WEBVIEW, null) ?: "none yet"}"
+        val connection = "cf pass now: $pass\n" +
+            "ua now: ${shortUserAgent(headers["User-Agent"].orEmpty())}\n" +
+            "last request: $lastRequest"
+        val webView = preferences.getString(PREF_PROBE_WEBVIEW, null)?.lines() ?: listOf("webview: none yet")
+        val firstHalf = (webView.size + 1) / 2
+        return listOf(
+            connection,
+            webView.take(firstHalf).joinToString("\n"),
+            webView.drop(firstHalf).joinToString("\n").ifEmpty { "(nothing more)" },
+        )
     }
 
     // Comix blocks chapter-list paging that is too fast or evenly spaced
@@ -742,10 +756,10 @@ abstract class Comix :
             val events = synchronized(webViewEvents) {
                 webViewEvents += event
                 if (webViewEvents.size > WEBVIEW_LOG_SIZE) webViewEvents.removeAt(0)
-                webViewEvents.joinToString(" › ")
+                webViewEvents.joinToString("\n")
             }
             val time = LocalTime.now().withNano(0)
-            preferences.edit().putString(PREF_PROBE_WEBVIEW, "$time ${document.location().toHttpUrl().encodedPath} · loads: ${checkedLoads.get()} · $events").apply()
+            preferences.edit().putString(PREF_PROBE_WEBVIEW, "webview $time ${document.location().toHttpUrl().encodedPath} · loads: ${checkedLoads.get()}\n$events").apply()
         }
         logWebView("start")
         return runWebView(timeout = Duration.INFINITE) {
@@ -983,18 +997,21 @@ abstract class Comix :
         pathSegments[4] == "chapters"
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        // Stage 2 probe: tap to see the full text in a box. Saved as the field's value first, because the app shows
-        // a value that only lives in `text` as a placeholder that can't be selected
-        val probe = probeSummary()
-        preferences.edit().putString(PREF_PROBE_VIEW, probe).commit()
-        EditTextPreference(screen.context).apply {
-            key = PREF_PROBE_VIEW
-            title = "Diagnostics (reopen this screen to refresh)"
-            summary = probe
-            dialogTitle = "Diagnostics"
-            setDefaultValue(probe)
-            text = probe
-        }.let(screen::addPreference)
+        // Stage 2 probe: tap a part to see it in a box that can be copied. Saved as the field's value first, because
+        // the app shows a value that only lives in `text` as a placeholder that can't be selected
+        val partTitles = listOf("connection", "hidden browser, part 1", "hidden browser, part 2")
+        probeParts().forEachIndexed { index, part ->
+            val partKey = "$PREF_PROBE_VIEW${index + 1}"
+            preferences.edit().putString(partKey, part).commit()
+            EditTextPreference(screen.context).apply {
+                key = partKey
+                title = "Diagnostics ${index + 1} of 3: ${partTitles[index]}"
+                summary = part
+                dialogTitle = "Diagnostics ${index + 1} of 3"
+                setDefaultValue(part)
+                text = part
+            }.let(screen::addPreference)
+        }
 
         SwitchPreferenceCompat(screen.context).apply {
             key = PREF_SOLVE_CAPTCHA
@@ -1180,6 +1197,7 @@ abstract class Comix :
         private const val BRIDGE_SEND = "__comixKSend"
         private const val BRIDGE_RETRY_MS = 200
         private const val LOAD_PROBE_DELAY_MS = 1500
+        private const val SHORT_UA_LENGTH = 60
         private const val WEBVIEW_LOG_SIZE = 14
         private val SITE_HOSTS = setOf("comix.to", "comix.ws")
 
