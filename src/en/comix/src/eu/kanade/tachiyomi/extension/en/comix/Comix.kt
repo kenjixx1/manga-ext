@@ -172,7 +172,14 @@ abstract class Comix :
         return response
     }
 
-    override fun Headers.Builder.configureHeaders() = add("Accept", "*/*")
+    // Comix answers "Third-party apps are not supported" to non-Safari user agents. A Safari UA from the app is
+    // kept, because Cloudflare ties its pass cookie to the UA the user solved it with.
+    override fun Headers.Builder.configureHeaders(): Headers.Builder {
+        if (!get("User-Agent").orEmpty().isIphoneSafari()) set("User-Agent", IPHONE_SAFARI_UA)
+        return add("Accept", "*/*")
+    }
+
+    private fun String.isIphoneSafari() = "iPhone" in this && "Safari/" in this && "CriOS" !in this && "FxiOS" !in this
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         val url = baseUrl.toHttpUrl().newBuilder().apply {
@@ -969,5 +976,8 @@ abstract class Comix :
 
         // Site's captcha endpoints, which also keep a WebView run alive while the solver works
         private const val WAF_PATH = "/@waf/"
+
+        private const val IPHONE_SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) " +
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1"
     }
 }
