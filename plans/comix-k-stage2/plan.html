@@ -1,0 +1,425 @@
+<title>Comix K Stage 2 Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column, wide figures scroll inside their own box. Build-log feel: cool paper, ink, one signal orange for "the error", blue for structure. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #18212b;
+  --muted: #56636f;
+  --line: #d5dbe1;
+  --blue: #2a63a8;
+  --blue-soft: #e3ecf7;
+  --signal: #c2470e;
+  --signal-soft: #fbe9df;
+  --green: #2e7d4f;
+  --green-soft: #e1f2e7;
+  --amber: #9a6a00;
+  --amber-soft: #fbf1d6;
+  --violet: #6b4bb3;
+  --violet-soft: #ece6f8;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #19212a; --ink: #e6ebf0; --muted: #9aa7b3; --line: #2c3742;
+    --blue: #7fb0ea; --blue-soft: #1d2d40; --signal: #ff8a50; --signal-soft: #3a2218;
+    --green: #6fcf97; --green-soft: #17301f; --amber: #e8b94a; --amber-soft: #352a10;
+    --violet: #b59cf0; --violet-soft: #2a2140; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19212a; --ink: #e6ebf0; --muted: #9aa7b3; --line: #2c3742;
+  --blue: #7fb0ea; --blue-soft: #1d2d40; --signal: #ff8a50; --signal-soft: #3a2218;
+  --green: #6fcf97; --green-soft: #17301f; --amber: #e8b94a; --amber-soft: #352a10;
+  --violet: #b59cf0; --violet-soft: #2a2140; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); letter-spacing: -0.01em; }
+h2 { font-size: 1.55rem; }
+h3 { font-size: 1.1rem; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--blue-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--blue); }
+section { display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lead { font-size: 1.12rem; color: var(--ink); }
+.muted { color: var(--muted); }
+ul.plain { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+
+/* header */
+header { display: flex; flex-direction: column; gap: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--mono); font-size: 0.75rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.chip.wait { background: var(--amber-soft); color: var(--amber); border-color: transparent; font-weight: 600; }
+.chip.ok { background: var(--green-soft); color: var(--green); border-color: transparent; }
+
+/* error anatomy */
+.terminal { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+.errline { font-family: var(--mono); font-size: clamp(0.78rem, 1.9vw, 0.98rem); line-height: 2.1; overflow-wrap: anywhere; }
+.seg { padding: 3px 6px; border-radius: 5px; }
+.seg.s0 { background: var(--line); }
+.seg.s1 { background: var(--signal-soft); color: var(--signal); }
+.seg.s2 { background: var(--blue-soft); color: var(--blue); }
+.seg.s3 { background: var(--violet-soft); color: var(--violet); }
+.seg.s4 { background: var(--green-soft); color: var(--green); }
+.sep { color: var(--muted); }
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.legend div { display: flex; flex-direction: column; gap: 2px; font-size: 0.92rem; min-width: 0; }
+.legend b { font-family: var(--mono); font-size: 0.8rem; }
+.k1 b { color: var(--signal); } .k2 b { color: var(--blue); } .k3 b { color: var(--violet); } .k4 b { color: var(--green); } .k0 b { color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+
+/* glossary */
+.gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 28px; }
+.gloss div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gloss dt { font-weight: 600; }
+.gloss dd { margin: 0; color: var(--muted); font-size: 0.94rem; }
+
+/* svg diagram */
+svg text { font-family: var(--body); fill: var(--ink); }
+svg .t-small { font-size: 12px; fill: var(--muted); }
+svg .t-mono { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); }
+svg .t-head { font-family: var(--display); font-size: 15px; font-weight: 700; }
+svg .zone { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+svg .box { fill: var(--blue-soft); stroke: var(--blue); stroke-width: 1.2; }
+svg .box-g { fill: var(--green-soft); stroke: var(--green); stroke-width: 1.2; }
+svg .box-s { fill: var(--signal-soft); stroke: var(--signal); stroke-width: 1.2; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+svg .arrowhead { fill: var(--muted); }
+svg .zone-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; fill: var(--muted); }
+
+/* decisions */
+.decisions { display: flex; flex-direction: column; gap: 16px; }
+.dec { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.dec-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; justify-content: space-between; }
+.tag { font-family: var(--mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
+.tag.ask { background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+.tag.set { background: var(--green-soft); color: var(--green); }
+.tag.dev { background: var(--signal-soft); color: var(--signal); }
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; }
+.opt { border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.opt.pick { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.opt h4 { margin: 0; font-size: 0.95rem; }
+.ua { font-family: var(--mono); font-size: 0.76rem; padding: 6px 8px; border-radius: 6px; background: var(--bg); overflow-wrap: anywhere; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.88rem; }
+.pill { padding: 2px 9px; border-radius: 999px; font-size: 0.8rem; font-weight: 500; }
+.pill.good { background: var(--green-soft); color: var(--green); }
+.pill.bad { background: var(--signal-soft); color: var(--signal); }
+.pill.neutral { background: var(--blue-soft); color: var(--blue); }
+
+/* lanes */
+.lanes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.lane-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 14px; align-items: start; }
+.lane-name { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 12px; }
+.tasks { display: flex; flex-wrap: wrap; gap: 10px; }
+.task { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.task .n { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.task .what { font-weight: 600; font-size: 0.95rem; line-height: 1.35; }
+.task .check { font-size: 0.82rem; color: var(--muted); }
+.task.outward { border-color: var(--amber); }
+.task.join { border-color: var(--blue); }
+@media (max-width: 560px) { .lane-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } .lane-name { padding-top: 0; } }
+
+/* questions */
+.qs { display: flex; flex-direction: column; gap: 12px; counter-reset: q; }
+.q { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--amber); border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.q .def { font-size: 0.9rem; color: var(--green); font-weight: 500; }
+ol.steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; gap: 4px; }
+</style>
+
+<main>
+  <header>
+    <span class="eyebrow">manga-ext · implementation plan · 2026-10-18</span>
+    <h1>Comix K Stage 2 Plan</h1>
+    <p class="lead"><b>The first Comix K build goes into Tachimanga on your iPhone, and its error message tells us why chapter pages fail.</b></p>
+    <ul class="plain">
+      <li>Stage 2 is a probe. It does not try to fix the error yet.</li>
+      <li>It changes 3 small things in the official Comix code, and builds and publishes them automatically.</li>
+      <li>You install it, open 1 chapter, and send me the error text. That text picks Stage 3.</li>
+    </ul>
+    <div class="chips">
+      <span class="chip wait">Waiting for your approval</span>
+      <span class="chip">9 tasks</span>
+      <span class="chip">2 lanes</span>
+      <span class="chip ok">Test code in the plan already ran and passed</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="ex">
+    <span class="eyebrow">What you will see</span>
+    <h2 id="ex">The new error message, piece by piece</h2>
+    <p>Today the app only says <code>Chapter pages failed: HTTP 403</code>. Comix K adds 4 pieces after it. Each piece answers 1 question.</p>
+    <div class="terminal">
+      <div class="errline" aria-label="Example error text">
+        <span class="seg s0">Chapter pages failed: HTTP 403</span><span class="sep"> · </span><span class="seg s1">reply: {"error":"captcha_required"}</span><span class="sep"> · </span><span class="seg s2">checked loads: 0</span><span class="sep"> · </span><span class="seg s3">puzzle page: no</span><span class="sep"> · </span><span class="seg s4">ua: app</span>
+      </div>
+      <div class="legend">
+        <div class="k0"><b>HTTP 403</b>Already there. The site said "no".</div>
+        <div class="k1"><b>reply</b>Why the site said no, in its own words. First 200 characters. Task 3.</div>
+        <div class="k2"><b>checked loads</b>How many page loads the app let the extension inspect. 0 means the app never shows it any. Task 5.</div>
+        <div class="k3"><b>puzzle page</b>Did the site's own puzzle page start loading? Task 5.</div>
+        <div class="k4"><b>ua</b>Which browser name we sent. "app" means Tachimanga's own, "forced" means ours. Task 4.</div>
+      </div>
+    </div>
+    <p class="muted">This example is the spec's guess at the result, not a real result yet.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>If the error shows</th><th>It means</th><th>Stage 3 does</th></tr></thead>
+        <tbody>
+          <tr><td><code>captcha_required</code> and <code>checked loads: 0</code></td><td>iPhone cannot inspect page loads, so the puzzle solver never starts</td><td>Start the solver from inside the page instead</td></tr>
+          <tr><td><code>captcha_required</code> and <code>checked loads</code> more than 0</td><td>Inspection works, but the solver fails on iPhone</td><td>Fix the solver, or solve by hand once in a while</td></tr>
+          <tr><td>Some other reply</td><td>A different check is blocking us</td><td>New design from that reply</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="words">
+    <span class="eyebrow">Words on this page</span>
+    <h2 id="words">7 words you need first</h2>
+    <dl class="gloss">
+      <div><dt>User agent (UA)</dt><dd>A name tag every browser sends, like "I am Safari on iPhone". Comix blocks name tags it does not like.</dd></div>
+      <div><dt>Cloudflare pass</dt><dd>A cookie you get after the "Just a moment..." check. It only works with the same name tag you had when you got it.</dd></div>
+      <div><dt>Package name</dt><dd>The extension's unique app name, like <code>…en.comixk</code>. Two extensions with the same one cannot both be installed.</dd></div>
+      <div><dt>Source ID</dt><dd>A number Tachimanga uses to link your library and settings to the extension. Changing it later disconnects them.</dd></div>
+      <div><dt>Signing key</dt><dd>A private file that proves updates come from you. Lose it, and every update needs uninstall and reinstall.</dd></div>
+      <div><dt>Repo branch</dt><dd>A separate branch called <code>repo</code> that only holds the published list. Tachimanga reads this list.</dd></div>
+      <div><dt>index.pb</dt><dd>The extension list file in keiyoushi's current format. Its link is what you paste into Tachimanga.</dd></div>
+    </dl>
+  </section>
+
+  <section aria-labelledby="flow">
+    <span class="eyebrow">How it fits together</span>
+    <h2 id="flow">From a push on your Mac to a chapter on your iPhone</h2>
+    <div class="scroll" style="padding:12px">
+      <svg viewBox="0 0 940 330" width="940" height="330" role="img" aria-label="Pipeline. Mac pushes code to GitHub main. One GitHub Actions job builds, signs, checks and publishes. It writes index.pb and repo.json to the repo branch and puts the APK and JAR in a GitHub Release. Tachimanga on iPhone reads index.pb, installs Comix K, which talks to comix.ws.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="zone" x="8" y="20" width="170" height="290" rx="10"/>
+        <text class="zone-label" x="22" y="42">YOUR MAC</text>
+        <rect class="box" x="24" y="62" width="138" height="78" rx="8"/>
+        <text class="t-head" x="36" y="88">Code</text>
+        <text class="t-small" x="36" y="108">3 small changes</text>
+        <text class="t-small" x="36" y="125">tests run here</text>
+        <rect class="box-s" x="24" y="172" width="138" height="78" rx="8"/>
+        <text class="t-head" x="36" y="198">Signing key</text>
+        <text class="t-small" x="36" y="218">stays in</text>
+        <text class="t-mono" x="36" y="235">~/.manga-ext-signing</text>
+
+        <rect class="zone" x="210" y="20" width="420" height="290" rx="10"/>
+        <text class="zone-label" x="224" y="42">GITHUB · kenjixx1/manga-ext (public)</text>
+        <rect class="box" x="226" y="62" width="110" height="78" rx="8"/>
+        <text class="t-head" x="238" y="88">main</text>
+        <text class="t-small" x="238" y="108">source code</text>
+        <rect class="box" x="360" y="62" width="254" height="120" rx="8"/>
+        <text class="t-head" x="374" y="88">1 Actions job</text>
+        <text class="t-small" x="374" y="110">build → sign → check identity</text>
+        <text class="t-small" x="374" y="128">→ publish</text>
+        <text class="t-mono" x="374" y="152">uses 4 secrets made</text>
+        <text class="t-mono" x="374" y="168">from your signing key</text>
+        <rect class="box-g" x="226" y="214" width="180" height="80" rx="8"/>
+        <text class="t-head" x="238" y="240">repo branch</text>
+        <text class="t-mono" x="238" y="260">index.pb  index.json</text>
+        <text class="t-mono" x="238" y="278">repo.json</text>
+        <rect class="box-g" x="422" y="214" width="192" height="80" rx="8"/>
+        <text class="t-head" x="434" y="240">Release</text>
+        <text class="t-mono" x="434" y="260">…comixk-v1.6.1.apk</text>
+        <text class="t-mono" x="434" y="278">…comixk-v1.6.1.jar</text>
+
+        <rect class="zone" x="662" y="20" width="270" height="290" rx="10"/>
+        <text class="zone-label" x="676" y="42">YOUR IPHONE</text>
+        <rect class="box" x="678" y="62" width="238" height="96" rx="8"/>
+        <text class="t-head" x="690" y="88">Tachimanga</text>
+        <text class="t-small" x="690" y="108">reads index.pb</text>
+        <text class="t-small" x="690" y="126">installs Comix K next to Comix</text>
+        <text class="t-small" x="690" y="144">shows the error text</text>
+        <rect class="box-s" x="678" y="214" width="238" height="80" rx="8"/>
+        <text class="t-head" x="690" y="240">comix.ws</text>
+        <text class="t-small" x="690" y="260">answers 403 today</text>
+        <text class="t-small" x="690" y="278">Comix K reports why</text>
+
+        <path class="arrow" d="M162,101 L222,101" marker-end="url(#ah)"/>
+        <text class="t-small" x="170" y="94">push</text>
+        <path class="arrow" d="M162,211 C300,211 330,160 356,150" marker-end="url(#ah)"/>
+        <text class="t-small" x="214" y="200">secrets, once</text>
+        <path class="arrow" d="M336,101 L356,101" marker-end="url(#ah)"/>
+        <path class="arrow" d="M420,182 L340,210" marker-end="url(#ah)"/>
+        <path class="arrow" d="M520,182 L520,210" marker-end="url(#ah)"/>
+        <path class="arrow" d="M406,252 C560,320 650,190 676,120" marker-end="url(#ah)"/>
+        <text class="t-small" x="600" y="318">list + download</text>
+        <path class="arrow" d="M797,158 L797,210" marker-end="url(#ah)"/>
+      </svg>
+    </div>
+    <ul class="plain">
+      <li><b>Reused as is.</b> keiyoushi's build tools, the whole Comix code, its publish script, and its exact GitHub Action versions.</li>
+      <li><b>New.</b> The 3 probe changes, an identity check, 2 test files, and a shorter one-job workflow.</li>
+      <li><b>Left out.</b> About 1,500 other extensions, shared libraries Comix does not use, and keiyoushi's issue templates and bots.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="dec">
+    <span class="eyebrow">Hard to undo later</span>
+    <h2 id="dec">5 decisions</h2>
+    <div class="decisions">
+
+      <article class="dec">
+        <div class="dec-head"><h3>D1 · Which user agent to send</h3><span class="tag ask">needs your answer · changes the spec</span></div>
+        <p>The spec says "always send iOS 18.5 Safari". New finding. Tachimanga's "Mobile Safari" setting already sends an <b>iOS 26</b> Safari name tag (its changelog, 2025-11-18). Your Cloudflare pass was made with that iOS 26 tag.</p>
+        <div class="compare">
+          <div class="opt">
+            <h4>A · Always force ours (spec)</h4>
+            <div class="ua">…iPhone OS 18_5… Version/18.5 …</div>
+            <div class="flow"><span class="pill neutral">iOS 18.5 tag</span>→<span class="pill bad">does not match pass</span>→<span class="pill bad">Cloudflare may ask again</span></div>
+            <p class="muted">Risk. We could break a check that passes today.</p>
+          </div>
+          <div class="opt pick">
+            <h4>B · Keep the app's tag if it is iPhone Safari (recommended)</h4>
+            <div class="ua">app tag has "iPhone" + "Safari/" → keep it<br>otherwise → use our iOS 18.5 tag</div>
+            <div class="flow"><span class="pill neutral">iOS 26 tag</span>→<span class="pill good">matches pass</span>→<span class="pill good">Cloudflare stays passed</span></div>
+            <p class="muted">Still never sends the blocked "Default" tag. The error ends with <code>ua: app</code> or <code>ua: forced</code>.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="dec">
+        <div class="dec-head"><h3>D2 · Install link format</h3><span class="tag dev">changes the spec</span></div>
+        <p>The spec says <code>index.min.json</code>. keiyoushi stopped using it. Today their <code>index.min.json</code> lists only a stub called "Outdated App". The real list is <code>index.pb</code>, and the files sit in GitHub Releases. Your official Comix came from that new format, so Tachimanga reads it.</p>
+        <p><b>Plan.</b> Publish exactly keiyoushi's format. Your link becomes <code>https://github.com/kenjixx1/manga-ext/raw/repo/index.pb</code>.</p>
+      </article>
+
+      <article class="dec">
+        <div class="dec-head"><h3>D3 · Package name and source ID</h3><span class="tag set">decided</span></div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th></th><th>Official Comix</th><th>Comix K</th></tr></thead>
+            <tbody>
+              <tr><td>Name</td><td>Comix</td><td><b>Comix K</b></td></tr>
+              <tr><td>Package</td><td class="mono">…extension.en.comix</td><td class="mono"><b>…extension.en.comixk</b></td></tr>
+              <tr><td>Source ID</td><td class="mono">7537715367149829912</td><td class="mono"><b>3285188625626617474</b></td></tr>
+              <tr><td>Version</td><td class="mono">1.6.52</td><td class="mono"><b>1.6.1</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">The ID comes from the name. I checked the formula: it gives the live Comix ID exactly. Comix K has its own settings, so "Solve captchas" starts OFF there.</p>
+      </article>
+
+      <article class="dec">
+        <div class="dec-head"><h3>D4 · Keep the folder name <code>src/en/comix</code></h3><span class="tag set">decided</span></div>
+        <p>The build tool has a setting called <code>pkgName</code> that changes the package without moving files. Same file paths as keiyoushi means future Comix fixes copy over with fewer clashes.</p>
+      </article>
+
+      <article class="dec">
+        <div class="dec-head"><h3>D5 · Public repo and your own signing key</h3><span class="tag set">decided in the spec</span></div>
+        <ul class="plain">
+          <li>The repo must be public. Tachimanga cannot read private repos.</li>
+          <li>The key lives in <code>~/.manga-ext-signing/</code>, outside the repo. Only 4 GitHub secrets made from it go online.</li>
+          <li>Please back that folder up. Without it, updates need uninstall and reinstall.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="tasks">
+    <span class="eyebrow">Tasks at a glance</span>
+    <h2 id="tasks">9 tasks in 2 lanes</h2>
+    <p>The 2 lanes share no file, so they can run side by side. An orange border means the task does something public, so I do it myself, not a helper agent.</p>
+    <div class="lanes">
+      <div class="lane-row"><span class="lane-name">First</span>
+        <div class="tasks"><div class="task"><span class="n">Task 1</span><span class="what">Copy keiyoushi's build tools and Comix</span><span class="check">Check. Local build makes the official APK</span></div></div>
+      </div>
+      <div class="lane-row"><span class="lane-name">Lane A · extension</span>
+        <div class="tasks">
+          <div class="task"><span class="n">Task 2</span><span class="what">Name it Comix K, new package and ID</span><span class="check">Check. Identity script fails first, then passes</span></div>
+          <div class="task"><span class="n">Task 3</span><span class="what">Add the site's reply to the error</span><span class="check">Check. 3 tests (2 fail first, then all pass)</span></div>
+          <div class="task"><span class="n">Task 4</span><span class="what">Safari user agent (D1)</span><span class="check">Check. Build and code format</span></div>
+          <div class="task"><span class="n">Task 5</span><span class="what">Count loads, spot the puzzle page</span><span class="check">Check. Build, format, all tests</span></div>
+        </div>
+      </div>
+      <div class="lane-row"><span class="lane-name">Lane B · pipeline</span>
+        <div class="tasks">
+          <div class="task"><span class="n">Task 6</span><span class="what">Publish script points to your repo</span><span class="check">Check. 3 tests with a fake GitHub tool</span></div>
+          <div class="task"><span class="n">Task 7</span><span class="what">One-job build-and-publish workflow</span><span class="check">Check. File parses, secrets only in safe places</span></div>
+        </div>
+      </div>
+      <div class="lane-row"><span class="lane-name">Any time</span>
+        <div class="tasks"><div class="task outward"><span class="n">Task 8</span><span class="what">Make the key, public repo, 4 secrets, repo branch</span><span class="check">Public action. I do it after you approve</span></div></div>
+      </div>
+      <div class="lane-row"><span class="lane-name">Join</span>
+        <div class="tasks"><div class="task join outward"><span class="n">Task 9</span><span class="what">First push, watch the build, check the published list</span><span class="check">Then hand the iPhone test to you</span></div></div>
+      </div>
+    </div>
+    <p class="muted">Kotlin changes (Tasks 4 and 5) have no unit-test setup in keiyoushi's tools. They are checked by the build and by your iPhone test. I ran the Task 3 and Task 6 tests against a scratch copy already, and both pass.</p>
+  </section>
+
+  <section aria-labelledby="files">
+    <span class="eyebrow">File map</span>
+    <h2 id="files">What gets touched</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>File</th><th>Change</th><th>Task</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">src/en/comix/build.gradle.kts</td><td>Name, <code>pkgName</code>, version</td><td>2</td></tr>
+          <tr><td class="mono">src/en/comix/assets/chapter_pages.js</td><td>Reply text in the error</td><td>3</td></tr>
+          <tr><td class="mono">…/en/comix/Comix.kt</td><td>User agent choice, then load counters</td><td>4, 5</td></tr>
+          <tr><td class="mono">.github/scripts/publish-repo.py</td><td>Your repo name, key, first-run fix, writes <code>repo.json</code></td><td>6</td></tr>
+          <tr><td class="mono">.github/scripts/github_utils.py</td><td>Repo name from the build environment</td><td>6</td></tr>
+          <tr><td class="mono">.github/workflows/build_push.yml</td><td>New, 1 job</td><td>7</td></tr>
+          <tr><td class="mono">tools/check_source_info.py</td><td>New, checks name, package, ID</td><td>2</td></tr>
+          <tr><td class="mono">tools/tests/chapter_pages.test.mjs</td><td>New, 3 tests</td><td>3</td></tr>
+          <tr><td class="mono">tools/tests/test_publish_repo.py</td><td>New, 3 tests</td><td>6</td></tr>
+          <tr><td class="mono">README.md, AGENTS.md</td><td>New, ours</td><td>1</td></tr>
+          <tr><td class="mono">core/ compiler/ common/ gradle/ …</td><td>Copied, unchanged</td><td>1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="you">
+    <span class="eyebrow">Your part at the end</span>
+    <h2 id="you">The iPhone test</h2>
+    <ol class="steps">
+      <li>Tachimanga, Extensions, repos. Add the <code>index.pb</code> link.</li>
+      <li>Install Comix K. Official Comix stays.</li>
+      <li>Keep User agent on Mobile Safari.</li>
+      <li>Comix K settings. Turn Solve captchas ON.</li>
+      <li>Open <code>comix.ws/title/392n</code>, chapter 1. Solve Cloudflare in WebView if it asks.</li>
+      <li>Send me the full error text.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="oq">
+    <span class="eyebrow">Open questions</span>
+    <h2 id="oq">3 answers I need</h2>
+    <div class="qs">
+      <div class="q"><h3>1 · User agent (D1)</h3><p>Keep the app's Safari tag when it is already iPhone Safari, or always force the iOS 18.5 tag?</p><span class="def">My pick. Keep the app's tag (option B).</span></div>
+      <div class="q"><h3>2 · Your keiyoushi link in Tachimanga</h3><p>In Tachimanga's repo list, does keiyoushi's link end in <code>index.pb</code> or <code>index.min.json</code>? It confirms D2. If you are not sure, I go with <code>index.pb</code>.</p><span class="def">My pick. index.pb (what keiyoushi's site tells people to add).</span></div>
+      <div class="q"><h3>3 · How to run the tasks</h3><p>Helper agents, 1 per task, with a review between tasks? Or I do them all in this session?</p><span class="def">My pick. Helper agents (cheap implementers via cc-bridge). Tasks 8 and 9 stay with me.</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Execution plan. <span class="mono">docs/plans/2026-10-18-comix-k-stage2.md</span></span>
+    <span>Spec. <span class="mono">docs/specs/2026-10-18-comix-k-design.md</span></span>
+    <span>Upstream base. <span class="mono">keiyoushi/extensions-source @ bca1678</span> (2026-10-17)</span>
+  </footer>
+</main>
