@@ -1,9 +1,7 @@
 package eu.kanade.tachiyomi.extension.en.comix
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.SharedPreferences
+import android.webkit.CookieManager
 import android.webkit.WebResourceResponse
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
@@ -836,6 +834,7 @@ abstract class Comix :
                 window.$rejectName = message => window.$BRIDGE_SEND('$errorBridgeName', 'post', message);
                 window.$touchName = points => window.$BRIDGE_SEND('$touchBridgeName', 'postMessage', points.join(","));
                 ${apiProbeScript(probeBridgeName)}
+                ${loadProbeScript(probeBridgeName)}
                 ${pageScript(passPayloadName, rejectName, touchName)}
                 ${captureScript.orEmpty()}
             """.trimIndent()
@@ -843,6 +842,18 @@ abstract class Comix :
             val html = document.clone().apply {
                 head().appendElement("script").append(bootstrapScript)
             }.outerHtml()
+            // Fix attempt: the hidden WebView may not share the app's cookies, so give it the Cloudflare pass first
+            val pageUrl = document.location().toHttpUrl()
+            runCatching {
+                val cookieManager = CookieManager.getInstance()
+                val cookies = client.cookieJar.loadForRequest(pageUrl)
+                cookies.forEach { cookieManager.setCookie(pageUrl.toString(), it.toString()) }
+                cookieManager.flush()
+                cookies.map { it.name }
+            }.fold(
+                { logWebView("cookies copied: ${it.joinToString(",").ifEmpty { "none" }}") },
+                { logWebView("cookie copy failed: ${it.message}") },
+            )
             loadData(document.location(), html)
         }
     }
@@ -880,6 +891,36 @@ abstract class Comix :
                 }
                 flush();
             }, $BRIDGE_RETRY_MS);
+        })();
+    """.trimIndent()
+
+    // Probe: the site's own code never called its API on iPhone, so check from inside the page whether its code files
+    // load and whether the page's own requests pass Cloudflare
+    private fun loadProbeScript(probeBridgeName: String) = """
+        (function () {
+            const report = text => window.$BRIDGE_SEND('$probeBridgeName', 'post', text);
+            const path = url => String(url).replace(location.origin, '');
+            window.addEventListener('error', event => {
+                const target = event.target;
+                if (target && target !== window && (target.src || target.href)) report('load failed ' + path(target.src || target.href));
+            }, true);
+            const check = async () => {
+                const scripts = [...document.querySelectorAll('script[src]')];
+                report('scripts ' + scripts.length + ' (' + scripts.filter(s => s.type === 'module').length + ' module), asset loads ' +
+                    performance.getEntriesByType('resource').filter(e => e.name.includes('/assets/')).length);
+                const main = scripts.map(s => s.src).find(src => /[/]assets[/].*[.]js/.test(src));
+                for (const url of [main, '/api/v1/user'].filter(Boolean)) {
+                    try {
+                        const response = await fetch(url, { credentials: 'include' });
+                        const body = await response.text();
+                        report('fetch ' + path(url) + ' ' + response.status + (response.status >= 400 ? ' ' + body.slice(0, 80).replace(/[\s]+/g, ' ') : ''));
+                    } catch (e) {
+                        report('fetch ' + path(url) + ' error ' + e);
+                    }
+                }
+            };
+            if (document.readyState === 'complete') setTimeout(check, $LOAD_PROBE_DELAY_MS);
+            else window.addEventListener('load', () => setTimeout(check, $LOAD_PROBE_DELAY_MS), { once: true });
         })();
     """.trimIndent()
 
@@ -942,29 +983,17 @@ abstract class Comix :
         pathSegments[4] == "chapters"
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        // Stage 2 probe: tap to see the full text in a box that can be copied
+        // Stage 2 probe: tap to see the full text in a box. Saved as the field's value first, because the app shows
+        // a value that only lives in `text` as a placeholder that can't be selected
         val probe = probeSummary()
+        preferences.edit().putString(PREF_PROBE_VIEW, probe).commit()
         EditTextPreference(screen.context).apply {
             key = PREF_PROBE_VIEW
             title = "Diagnostics (reopen this screen to refresh)"
             summary = probe
             dialogTitle = "Diagnostics"
+            setDefaultValue(probe)
             text = probe
-        }.let(screen::addPreference)
-
-        SwitchPreferenceCompat(screen.context).apply {
-            key = PREF_PROBE_COPY
-            title = "Copy diagnostics"
-            summary = "Tap to copy the diagnostics text"
-            setDefaultValue(false)
-            setOnPreferenceChangeListener { preference, _ ->
-                preference.summary = runCatching {
-                    val clipboard = screen.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Comix K diagnostics", probeSummary()))
-                    "Copied. Paste it into the chat."
-                }.getOrElse { "Copy is not supported here: ${it.message}" }
-                false
-            }
         }.let(screen::addPreference)
 
         SwitchPreferenceCompat(screen.context).apply {
@@ -1148,9 +1177,9 @@ abstract class Comix :
         private const val PREF_PROBE_LAST_REQUEST = "pref_probe_last_request"
         private const val PREF_PROBE_VIEW = "pref_probe_view"
         private const val PREF_PROBE_WEBVIEW = "pref_probe_webview"
-        private const val PREF_PROBE_COPY = "pref_probe_copy"
         private const val BRIDGE_SEND = "__comixKSend"
         private const val BRIDGE_RETRY_MS = 200
+        private const val LOAD_PROBE_DELAY_MS = 1500
         private const val WEBVIEW_LOG_SIZE = 14
         private val SITE_HOSTS = setOf("comix.to", "comix.ws")
 
