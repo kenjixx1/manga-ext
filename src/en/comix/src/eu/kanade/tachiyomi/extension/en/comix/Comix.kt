@@ -45,6 +45,7 @@ import okio.Buffer
 import org.json.JSONObject
 import org.jsoup.nodes.Document
 import java.io.IOException
+import java.time.LocalTime
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -102,25 +103,48 @@ abstract class Comix :
 
     // Probe: a Cloudflare pass only works with the UA that earned it, so show the UA this request carried and
     // whether the app holds a pass for the site. Sits outside the app's Cloudflare interceptor, which runs last.
+    // Every site request is also logged to the settings screen, because the app can fail a call outside this path.
     private fun cloudflareProbe(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        if (request.url.host != baseUrlHost) return chain.proceed(request)
+        if (!request.url.isSiteHost()) return chain.proceed(request)
+        val sent = "${request.url.encodedPath}${request.cloudflareProbeInfo()}"
+        recordProbe("$sent · waiting")
         val response = try {
             chain.proceed(request)
-        } catch (e: IOException) {
-            if (chain.call().isCanceled()) throw e
+        } catch (e: Throwable) {
+            recordProbe("$sent · failed: ${e.javaClass.name}: ${e.message}")
+            if (e !is IOException || chain.call().isCanceled()) throw e
             throw IOException(e.message.orEmpty() + request.cloudflareProbeInfo(), e)
         }
-        if (response.code in CLOUDFLARE_BLOCK_CODES && response.header("cf-mitigated") != null) {
+        val challenged = response.header("cf-mitigated") != null
+        recordProbe("$sent · HTTP ${response.code}${if (challenged) " (Cloudflare challenge)" else ""}")
+        if (response.code in CLOUDFLARE_BLOCK_CODES && challenged) {
             response.close()
             throw IOException("Cloudflare blocked (HTTP ${response.code})" + request.cloudflareProbeInfo())
         }
         return response
     }
 
+    private fun HttpUrl.isSiteHost() = host == baseUrlHost || host.removePrefix("www.") in SITE_HOSTS
+
     private fun Request.cloudflareProbeInfo(): String {
         val hasPass = client.cookieJar.loadForRequest(url).any { it.name == "cf_clearance" }
         return " · sent ua: ${header("User-Agent").orEmpty()} · cf pass: ${if (hasPass) "yes" else "no"}"
+    }
+
+    private fun recordProbe(text: String) {
+        val time = LocalTime.now().withNano(0)
+        preferences.edit().putString(PREF_PROBE_LAST_REQUEST, "$time $text").apply()
+    }
+
+    private fun probeSummary(): String {
+        val siteUrl = baseUrl.toHttpUrl()
+        val pass = runCatching { client.cookieJar.loadForRequest(siteUrl).any { it.name == "cf_clearance" } }
+            .fold({ if (it) "yes" else "no" }, { "error: ${it.message}" })
+        val lastRequest = preferences.getString(PREF_PROBE_LAST_REQUEST, null) ?: "none yet"
+        return "cf pass now: $pass\n" +
+            "ua now: ${headers["User-Agent"].orEmpty()}\n" +
+            "last request: $lastRequest"
     }
 
     // Comix blocks chapter-list paging that is too fast or evenly spaced
@@ -810,6 +834,16 @@ abstract class Comix :
         pathSegments[4] == "chapters"
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        // Stage 2 probe: tap to see the full text in a box that can be copied
+        val probe = probeSummary()
+        EditTextPreference(screen.context).apply {
+            key = PREF_PROBE_VIEW
+            title = "Diagnostics (reopen this screen to refresh)"
+            summary = probe
+            dialogTitle = "Diagnostics"
+            text = probe
+        }.let(screen::addPreference)
+
         SwitchPreferenceCompat(screen.context).apply {
             key = PREF_SOLVE_CAPTCHA
             title = "Solve captchas"
@@ -988,6 +1022,9 @@ abstract class Comix :
         private const val PREF_SHOW_TAGS_IN_GENRES = "pref_show_tags_in_genres"
         private const val PREF_SCORE_POSITION = "pref_score_position"
         private const val PREF_SOLVE_CAPTCHA = "pref_solve_captcha"
+        private const val PREF_PROBE_LAST_REQUEST = "pref_probe_last_request"
+        private const val PREF_PROBE_VIEW = "pref_probe_view"
+        private val SITE_HOSTS = setOf("comix.to", "comix.ws")
 
         private const val DEFAULT_CONTENT_RATING = "suggestive"
         private const val WEBVIEW_TIMEOUT_SECONDS = 120L
