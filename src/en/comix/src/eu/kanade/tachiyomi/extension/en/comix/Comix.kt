@@ -69,7 +69,8 @@ abstract class Comix :
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?) = size > TAG_ID_CACHE_SIZE
     }
 
-    override fun OkHttpClient.Builder.configureClient() = addInterceptor(Descrambler.interceptor)
+    override fun OkHttpClient.Builder.configureClient() = addInterceptor(::cloudflareProbe)
+        .addInterceptor(Descrambler.interceptor)
         .addInterceptor(::altHostFallback)
         .addInterceptor { chain ->
             val request = chain.request()
@@ -98,6 +99,29 @@ abstract class Comix :
         .rateLimit(5)
 
     private val baseUrlHost get() = baseUrl.toHttpUrl().host
+
+    // Probe: a Cloudflare pass only works with the UA that earned it, so show the UA this request carried and
+    // whether the app holds a pass for the site. Sits outside the app's Cloudflare interceptor, which runs last.
+    private fun cloudflareProbe(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (request.url.host != baseUrlHost) return chain.proceed(request)
+        val response = try {
+            chain.proceed(request)
+        } catch (e: IOException) {
+            if (chain.call().isCanceled()) throw e
+            throw IOException(e.message.orEmpty() + request.cloudflareProbeInfo(), e)
+        }
+        if (response.code in CLOUDFLARE_BLOCK_CODES && response.header("cf-mitigated") != null) {
+            response.close()
+            throw IOException("Cloudflare blocked (HTTP ${response.code})" + request.cloudflareProbeInfo())
+        }
+        return response
+    }
+
+    private fun Request.cloudflareProbeInfo(): String {
+        val hasPass = client.cookieJar.loadForRequest(url).any { it.name == "cf_clearance" }
+        return " · sent ua: ${header("User-Agent").orEmpty()} · cf pass: ${if (hasPass) "yes" else "no"}"
+    }
 
     // Comix blocks chapter-list paging that is too fast or evenly spaced
     private class RequestPacer(private val minGapMs: Long, private val maxGapMs: Long) {
@@ -975,6 +999,7 @@ abstract class Comix :
         private const val TAG_ID_CACHE_SIZE = 50
         private val SCRAMBLE_PATH_FALLBACK_REGEX = Regex("/(?:i5|s?i+)/")
         private val SERVER_ERROR_CODES = setOf(502, 503, 522, 523)
+        private val CLOUDFLARE_BLOCK_CODES = setOf(403, 503)
         private const val ALT_HOSTS_FRAGMENT = "alt="
 
         // Site requests in the WebView that the extension has no use for: error reports, comments, upload images
