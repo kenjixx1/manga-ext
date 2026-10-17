@@ -932,9 +932,13 @@ Expected: `gh api repos/kenjixx1/manga-ext/branches --jq '.[].name'` lists `repo
 
 - [ ] **Step 1: Push `main` and watch the CI run it starts**
 
+First merge the work branch into `main` (found in final review: without it the push sends no workflow). Right after the push, make `main` the default branch: pushing `repo` first made `repo` the default, and release tags would then point at `repo` commits.
+
 ```bash
 cd ~/Documents/manga-ext
+git merge --no-ff stage2
 git push -u origin main
+gh repo edit kenjixx1/manga-ext --default-branch main
 gh run list -R kenjixx1/manga-ext -L1 --json databaseId,status,headSha
 gh run watch -R kenjixx1/manga-ext "$(gh run list -R kenjixx1/manga-ext -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 ```
