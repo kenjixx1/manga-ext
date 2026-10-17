@@ -45,6 +45,7 @@ import okio.Buffer
 import org.json.JSONObject
 import org.jsoup.nodes.Document
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
@@ -677,6 +678,12 @@ abstract class Comix :
         val waitSeconds = if (isDataRequest != null) DATA_REQUEST_WAIT_SECONDS else WEBVIEW_TIMEOUT_SECONDS
         val timeoutDeadline = AtomicLong(System.nanoTime() + waitSeconds.seconds.inWholeNanoseconds)
         val dataRequests = AtomicInteger()
+        // Stage 2 probe: does the app pass page loads to interceptRequest, and does the captcha frame show up
+        val checkedLoads = AtomicInteger()
+        val sawPuzzlePage = AtomicBoolean()
+        fun probeInfo() = " · checked loads: ${checkedLoads.get()}" +
+            " · puzzle page: ${if (sawPuzzlePage.get()) "yes" else "no"}" +
+            " · ua: ${if (headers["User-Agent"] == IPHONE_SAFARI_UA) "forced" else "app"}"
         val (bridgeName, errorBridgeName, passPayloadName, rejectName) = List(4) { randomName() }
         val (touchBridgeName, touchName) = List(2) { randomName() }
         return runWebView(timeout = Duration.INFINITE) {
@@ -685,12 +692,14 @@ abstract class Comix :
 
             val emptyResponse = WebResourceResponse("text/plain", "utf-8", Buffer().inputStream())
             interceptRequest { request ->
+                checkedLoads.incrementAndGet()
                 val requestUrl = request.url?.toString()?.toHttpUrlOrNull()
                     ?: return@interceptRequest emptyResponse
                 if (UNUSED_SITE_PATHS.any(requestUrl.encodedPath::startsWith)) return@interceptRequest emptyResponse
                 // The solver's own request for this path reads the site's page
                 val isFrameLoad = request.requestHeaders["Accept"].orEmpty().contains("text/html")
                 if (requestUrl.encodedPath == WAF_CHALLENGE_PATH && isFrameLoad) {
+                    sawPuzzlePage.set(true)
                     if (!preferences.solveCaptchas()) {
                         reject(Exception("Open in WebView to solve the captcha, or turn on \"Solve captchas\" in extension settings"))
                         return@interceptRequest emptyResponse
@@ -715,7 +724,7 @@ abstract class Comix :
             }
 
             jsBridge(bridgeName) { resolve(it) }
-            jsBridge(errorBridgeName) { reject(Exception(it)) }
+            jsBridge(errorBridgeName) { reject(Exception(it + probeInfo())) }
             webMessageBridge(touchBridgeName, setOf(document.location().toHttpUrl().run { "$scheme://$host" })) { message ->
                 val points = message.split(',').mapNotNull { it.toFloatOrNull() }
                 when (points.size) {
@@ -739,7 +748,7 @@ abstract class Comix :
                         dataRequests.get() == 0 -> "Site never requested the data"
                         else -> "Nothing read from ${dataRequests.get()} site requests"
                     }
-                    reject(Exception(message))
+                    reject(Exception(message + probeInfo()))
                 } else if (captureScript != null) {
                     evaluateJs(captureScript)
                 }
