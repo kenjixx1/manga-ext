@@ -45,6 +45,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okio.Buffer
 import org.json.JSONObject
+import org.jsoup.Jsoup
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import java.io.File
@@ -103,6 +104,7 @@ abstract class Comix :
             }
             response
         }
+        .addNetworkInterceptor(::withoutSessionOnApi)
         .addNetworkInterceptor(::failureProbe)
         .rateLimit(2) { it.host == baseUrlHost }
         .rateLimit(5)
@@ -141,14 +143,34 @@ abstract class Comix :
         val request = chain.request()
         val response = chain.proceed(request)
         if (response.isSuccessful || !request.url.isSiteHost()) return response
-        val body = runCatching { response.peekBody(FAILURE_PEEK_BYTES).string() }.getOrDefault("")
-            .replace(Regex("\\s+"), " ").take(FAILURE_BODY_CHARS)
+        val raw = runCatching { response.peekBody(FAILURE_PEEK_BYTES).string() }.getOrDefault("")
+        // HTML error pages: keep the page title and the readable text, not the markup
+        val body = if (raw.trimStart().startsWith("<")) {
+            Jsoup.parse(raw).run { "[${title()}] ${body().text()}" }
+        } else {
+            raw
+        }.replace(Regex("\\s+"), " ").take(FAILURE_BODY_CHARS)
         val mitigated = response.header("cf-mitigated")?.let { " cf-mitigated=$it" }.orEmpty()
         val time = LocalTime.now().withNano(0)
         preferences.edit()
             .putString(PREF_PROBE_FAILURE, "$time ${request.url.encodedPath} HTTP ${response.code}$mitigated · $body")
             .apply()
         return response
+    }
+
+    // The site can mark a session as a third-party app (it did after one request with a non-Safari UA), and then its
+    // API answers every request on that session with "third_party_app". The API needs no session, so leave it out.
+    private fun withoutSessionOnApi(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val cookie = request.header("Cookie")
+        if (cookie == null || !request.url.isSiteHost() || !request.url.encodedPath.startsWith("/api/")) {
+            return chain.proceed(request)
+        }
+        val kept = cookie.split(';').map(String::trim).filterNot { it.startsWith("session=") }
+        val stripped = request.newBuilder()
+            .apply { if (kept.isEmpty()) removeHeader("Cookie") else header("Cookie", kept.joinToString("; ")) }
+            .build()
+        return chain.proceed(stripped)
     }
 
     private fun HttpUrl.isSiteHost() = host == baseUrlHost || host.removePrefix("www.") in SITE_HOSTS
@@ -1254,7 +1276,7 @@ abstract class Comix :
         private const val PREF_PROBE_REQUEST_LOG = "pref_probe_request_log"
         private const val REQUEST_LOG_SIZE = 14
         private const val FAILURE_PEEK_BYTES = 4096L
-        private const val FAILURE_BODY_CHARS = 160
+        private const val FAILURE_BODY_CHARS = 220
         private const val CLOUDFLARE_HELP = "Cloudflare check needed: tap Web View, pass the check, then come back and tap Retry"
         private val SCRIPT_IMPORT_REGEX = Regex("""((?:from\s*|import\s*\(\s*|import\s*)["'])(\.{1,2}/[^"']+\.js)(["'])""")
         private val siteScriptCache = ConcurrentHashMap<String, String>()
