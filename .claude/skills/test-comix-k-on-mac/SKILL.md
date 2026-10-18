@@ -67,18 +67,42 @@ When browse shows **"Cloudflare check needed: tap Web View..."**: click **Web Vi
 check. If it is the "Verify you are human" box, click it once. If the check will not pass from an automated click,
 **ask the user to click it**. Then go back (top-left arrow) and click **Retry**.
 
-## Install a new build
+## Install a new build (tested 2026-10-18)
 
-- **Through the repo (what the user does):** after CI publishes, Tachimanga may keep showing the old version for
-  10–20 minutes (it caches the repo list). Then: Browse → Extensions → Comix K → update.
-- **Directly from a local build (faster, try first):** in Browse → Extensions click **+** (top right) → **Install
-  extension (select a file)**. In the file dialog press cmd+shift+G, `paste` the JAR's full path, press `return` twice.
-  The JAR is `src/en/comix/build/outputs/jar/release/tachiyomi-en.comixk-v1.6.N.jar` after
-  `./gradlew :src:en:comix:assembleRelease`. This route was **not yet tried**. Note what happens and update this file.
+1. Build a JAR signed with the real key: `tools/build-signed.sh` (prints `/private/tmp/comix-k-builds/...v1.6.N.jar`).
+   It must be the real key: a debug-signed JAR is a different signer.
+2. **Remove the installed Comix K first.** Installing over it says "Extension Installed!" but keeps the old version.
+   Browse → Extensions → Comix K → **Remove** → **Confirm**.
+3. Browse → Extensions → **+** (top right) → **Install extension** (Select an APK or JAR file). The file picker opens
+   in `comix-k-builds`, newest first. Click the file's row once, then send Enter with
+   `osascript -e 'tell application "System Events" to key code 36'`. cliclick's Return does not reach this dialog.
+4. A toast "Extension Installed!" shows briefly. Check the version on the extension page.
+
+Through the repo (what the user does): after CI publishes, Tachimanga may keep showing the old version for 10–20
+minutes (it caches the repo list).
+
+## Scrolling
+
+cliclick cannot scroll. Build the helper once per session:
+`swiftc -O tools/mac-ui/scroll.swift -o "$TMPDIR/comix-k-ui/scroll"`, then `"$TMPDIR/comix-k-ui/scroll" X Y -60`
+scrolls down at screen point X,Y (negative = down). This loads the next browse page.
+
+## Cookies and the "third-party" flag
+
+- App cookies: More → General → Advanced → **Clear Cookies**. This does **not** clear the Web View's cookies.
+- Web View cookies: open a Web View → **⋯** → **Clear Cookies**.
+- Comix flags an (internet address + user agent) pair as a third-party app after suspicious API calls. Then
+  even the visible Web View shows "Third-party apps are not supported", and clearing cookies does not help. Chrome on
+  the same Mac still works (different UA). **Stop testing when this happens**: more requests can keep the flag alive.
+- More → General → Advanced also has **User Agent** (only Default and Mobile Safari), **HTTP Request Dump** and
+  **Enable log** (needs an app restart).
 
 ## Mac is not iPhone
 
 Known differences seen on 2026-10-18:
+- Mac Tachimanga's "Mobile Safari" UA is an **iPad** Safari string (`Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) ...
+  Version/26.5 Mobile/15E148 Safari/604.1`), and "Default" is the Mac WebKit string. Comix blocks Default as
+  third-party.
 - Tachimanga's app requests on the Mac send an **iPad** UA (`Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) ...`), even
   though Comix K sets an iPhone Safari UA. The app overrides the extension's UA there.
 - The hidden browser view sends the Mac's built-in UA (`... Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)`).
