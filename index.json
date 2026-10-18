@@ -11,13 +11,13 @@
         "name": "Comix K",
         "packageName": "eu.kanade.tachiyomi.extension.en.comixk",
         "resources": {
-          "apkUrl": "https://github.com/kenjixx1/manga-ext/releases/download/5f5800f/tachiyomi-en.comixk-v1.6.9.apk",
+          "apkUrl": "https://github.com/kenjixx1/manga-ext/releases/download/5e3e256/tachiyomi-en.comixk-v1.6.10.apk",
           "iconUrl": "https://cdn.jsdelivr.net/gh/kenjixx1/manga-ext@main/src/en/comix/res/mipmap-xhdpi/ic_launcher.png",
-          "jarUrl": "https://github.com/kenjixx1/manga-ext/releases/download/5f5800f/tachiyomi-en.comixk-v1.6.9.jar"
+          "jarUrl": "https://github.com/kenjixx1/manga-ext/releases/download/5e3e256/tachiyomi-en.comixk-v1.6.10.jar"
         },
         "extensionLib": "1.6",
-        "versionCode": "106009",
-        "versionName": "1.6.9",
+        "versionCode": "106010",
+        "versionName": "1.6.10",
         "contentWarning": "CONTENT_WARNING_MIXED",
         "sources": [
           {
