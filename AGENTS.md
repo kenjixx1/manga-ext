@@ -11,3 +11,5 @@
 - Check before commit: `./gradlew :src:en:comix:spotlessCheck :src:en:comix:assembleRelease`.
 - Git: never `git add -A` or `git add .`. Stage named paths only.
 - Never commit `*.jks`, passwords, or `local.properties`.
+- Testing in the real app: use the `test-comix-k-on-mac` skill (`.claude/skills/test-comix-k-on-mac/SKILL.md`). It drives
+  the Tachimanga Mac app with `tools/mac-ui/ui.sh` and reads the Comix K Diagnostics.
