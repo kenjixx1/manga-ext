@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Comix Tachimanga Skin
 // @description  Makes comix.to look and work like Tachimanga on an iPhone: Library with unread badges, folder tabs, a bottom tab bar, a clean title page and reader.
-// @version      1.0.0
+// @version      1.0.1
 // @match        https://comix.to/*
 // @match        https://comix.ws/*
 // @run-at       document-start
@@ -103,7 +103,15 @@ html.ck-p-lib .ulrow__title { color: #f2f2f2 !important; font-size: 15px !import
 html.ck-p-lib .ulrow__meta { display: flex !important; gap: 0 !important; min-height: 0 !important; }
 html.ck-p-lib .ulrow__meta > :not(.card__time) { display: none !important; }
 html.ck-p-lib .ulrow__meta .card__time { color: #8e8e8e !important; font-size: 12px !important; }
-html.ck-p-lib .ulrow__actions { grid-column: 1 / -1; }
+html.ck-p-lib .ulrow__actions { display: none !important; }
+/* search open: only the search field and the sort choices, as pills */
+html.ck-p-lib .filter-adv-toggle, html.ck-p-lib .filter-top + div, html.ck-p-lib .uview__sort-tabs .useg--icon { display: none !important; }
+html.ck-p-lib .filter-search { background: #2e2e2e !important; border-radius: 10px !important; border: 0 !important; height: 38px !important; }
+html.ck-p-lib .filter-search input { font-size: 16px !important; color: #fff !important; }
+html.ck-p-lib .uview__sort-tabs { display: flex; gap: 8px; }
+html.ck-p-lib .uview__sort-tabs .useg { background: transparent !important; padding: 0 !important; gap: 8px !important; }
+html.ck-p-lib .uview__sort-tabs .useg__btn { background: transparent !important; border: 1px solid #3a3a3a !important; border-radius: 16px !important; padding: 5px 12px !important; color: #d0d0d0 !important; font-size: 14px !important; }
+html.ck-p-lib .uview__sort-tabs .useg__btn.is-on { background: #2e2e2e !important; border-color: #2e2e2e !important; color: #fff !important; }
 html.ck-p-lib .ulrow__title[data-ck-unread]::after { content: attr(data-ck-unread); position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: var(--ck-badge); color: #111; border-radius: 7px; padding: 2px 7px; font-size: 14px; font-variant-numeric: tabular-nums; line-height: 1.35; }
 
 /* ---------- Browse ---------- */
@@ -295,7 +303,7 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
     }
 
     function decorateLibrary() {
-        markTools(['.uview__filter-block', '.uview__sort-tabs', '.ulrow__actions']);
+        markTools(['.uview__filter-block', '.uview__sort-tabs']);
         const rows = [...document.querySelectorAll('li.ulrow')];
         for (const row of rows) {
             const title = row.querySelector('.ulrow__title');
