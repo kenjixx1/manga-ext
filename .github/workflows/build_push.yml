@@ -7,6 +7,8 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - 'plans/**'
+      - 'userscripts/**'
   workflow_dispatch:
 
 permissions: {}
