@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Comix Tachimanga Skin
 // @description  Makes comix.to look and work like Tachimanga on an iPhone: a page switcher in the title, Library with chapters left and resume buttons, folder tabs, Browse ratings, History by day, a clean title page and reader.
-// @version      1.1.0
+// @version      1.1.1
 // @match        https://comix.to/*
 // @match        https://comix.ws/*
 // @run-at       document-start
@@ -26,6 +26,7 @@
     const COUNTS_KEY = 'ckFolderCounts2';
     const RESUME_KEY = 'ckResume';
     const HOME_KEY = 'ckHomeLibrary';
+    const FROM_KEY = 'ckFrom';
 
     function readStore(key) {
         try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { return {}; }
@@ -403,7 +404,12 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
         document.body.appendChild(el(`<div id="ck-rtop"><a id="ck-rback" aria-label="Back to title">${ICON.back}</a><div><b id="ck-rtitle"></b><small id="ck-rch"></small></div></div>`));
         document.body.appendChild(buildMore());
 
-        document.getElementById('ck-back').addEventListener('click', () => history.length > 1 ? history.back() : location.assign(LIBRARY));
+        // Back from a title page goes to the list page it was opened from, even after reading a chapter in between
+        document.getElementById('ck-back').addEventListener('click', () => {
+            let from = null;
+            try { from = sessionStorage.getItem(FROM_KEY); } catch (e) {}
+            location.assign(from || LIBRARY);
+        });
         document.getElementById('ck-switch').addEventListener('click', () => {
             const open = root.classList.toggle('ck-menu');
             document.getElementById('ck-switch').setAttribute('aria-expanded', String(open));
@@ -430,7 +436,7 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
   <h2>Skin</h2>
   <div class="ck-group"><button class="ck-row" id="ck-home" role="switch" aria-checked="${homeOpensLibrary()}">${svg('<path d="M4 11l8-7 8 7v9H4z"/>', LINE)}<span>Open Library first</span><span class="ck-switch"></span></button></div>
   ${groups}
-  <p class="ck-note">Comix Tachimanga Skin 1.1.0</p>
+  <p class="ck-note">Comix Tachimanga Skin 1.1.1</p>
 </div>`);
         box.querySelector('#ck-home').addEventListener('click', (e) => {
             const on = e.currentTarget.getAttribute('aria-checked') !== 'true';
@@ -448,6 +454,9 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
         if (['lib', 'hist', 'browse', 'more', 'title'].includes(kind)) want.push('ck-headed');
         for (const c of PAGE_CLASSES) root.classList.toggle(c, want.includes(c));
         if (kind !== 'reader') root.classList.remove('ck-ui');
+        if (['lib', 'hist', 'browse', 'more'].includes(kind)) {
+            try { sessionStorage.setItem(FROM_KEY, location.pathname + location.search + location.hash); } catch (e) {}
+        }
 
         setText(document.getElementById('ck-name'), TITLES[kind] || '');
         if (!['lib', 'hist'].includes(kind)) setText(document.getElementById('ck-sub'), '');
