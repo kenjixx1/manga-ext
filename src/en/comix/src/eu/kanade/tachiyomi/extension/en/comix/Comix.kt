@@ -44,9 +44,12 @@ import okhttp3.Request
 import okhttp3.Response
 import okio.Buffer
 import org.json.JSONObject
+import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import java.io.IOException
 import java.time.LocalTime
+import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -155,7 +158,8 @@ abstract class Comix :
         val lastRequest = preferences.getString(PREF_PROBE_LAST_REQUEST, null) ?: "none yet"
         val connection = "cf pass now: $pass\n" +
             "ua now: ${shortUserAgent(headers["User-Agent"].orEmpty())}\n" +
-            "last request: $lastRequest"
+            "last request: $lastRequest\n" +
+            "last step: ${preferences.getString(PREF_PROBE_STEP, null) ?: "none yet"}"
         val webView = preferences.getString(PREF_PROBE_WEBVIEW, null)?.lines() ?: listOf("webview: none yet")
         val firstHalf = (webView.size + 1) / 2
         return listOf(
@@ -270,129 +274,115 @@ abstract class Comix :
         val expectedKeyword = JSONObject.quote(
             url.queryParameter("q") ?: url.queryParameter("keyword").orEmpty(),
         )
-        val searchResponse = document.extractBrowseResponse() ?: runInWebView(
-            document = document,
-            pageScript = { _, _, _ ->
-                """
-                (function () {
-                    const key = 'settings_v2';
-                    let settings = {};
-                    try {
-                        settings = JSON.parse(localStorage.getItem(key) || '{}');
-                    } catch (e) {}
-                    settings.state = {
-                        ...(settings.state || {}),
-                        contentFilter: '$effectiveContentRating'
-                    };
-                    if (settings.version === undefined) settings.version = 0;
-                    localStorage.setItem(key, JSON.stringify(settings));
-                })();
-                """.trimIndent()
-            },
-            buildScript = { passPayloadName ->
-                """
-                    (function () {
-                        const payloadKey = '__comixBrowsePayload';
-                        const expectedKeyword = $expectedKeyword;
-                        const capture = (parsed, allowEmpty = false) => {
-                            try {
-                                if (parsed && Array.isArray(parsed.items)) {
-                                    parsed = { result: parsed };
-                                }
-                                if (
-                                    parsed &&
-                                    parsed.result &&
-                                    Array.isArray(parsed.result.items) &&
-                                    (allowEmpty || parsed.result.items.length > 0)
-                                ) {
-                                    window[payloadKey] = JSON.stringify(parsed);
-                                    window.$passPayloadName(window[payloadKey]);
-                                    return true;
-                                }
-                            } catch (e) {}
-                            return false;
-                        };
-
-                        if (window[payloadKey]) return window[payloadKey];
-
-                        try {
-                            const raw = document.querySelector('script#initial-data')?.textContent;
-                            const queries = raw && JSON.parse(raw).queries;
-                            if (queries) Object.values(queries).some(capture);
-                        } catch (e) {}
-
-                        if (window[payloadKey]) return window[payloadKey];
-                        if (window.__comixBrowseCaptureInstalled) return null;
-                        window.__comixBrowseCaptureInstalled = true;
-
-                        const captureText = text => {
-                            try {
-                                if (text) capture(JSON.parse(text), true);
-                            } catch (e) {}
-                        };
-
-                        const shouldCaptureUrl = rawUrl => {
-                            try {
-                                const url = new URL(rawUrl || '', window.location.origin);
-                                if (!url.pathname.includes('/api/v1/manga')) return false;
-                                if (!expectedKeyword) return true;
-                                return url.searchParams.get('keyword') === expectedKeyword;
-                            } catch (e) {
-                                return false;
-                            }
-                        };
-
-                        const originalFetch = window.fetch;
-                        if (typeof originalFetch === 'function') {
-                            window.fetch = function () {
-                                return originalFetch.apply(this, arguments).then(response => {
-                                    try {
-                                        const url = response && response.url || '';
-                                        if (shouldCaptureUrl(url)) {
-                                            response.clone().text().then(captureText).catch(() => {});
-                                        }
-                                    } catch (e) {}
-                                    return response;
-                                });
-                            };
-                        }
-
-                        const originalOpen = XMLHttpRequest.prototype.open;
-                        const originalSend = XMLHttpRequest.prototype.send;
-                        XMLHttpRequest.prototype.open = function (method, url) {
-                            this.__comixBrowseUrl = String(url || '');
-                            return originalOpen.apply(this, arguments);
-                        };
-                        XMLHttpRequest.prototype.send = function () {
-                            this.addEventListener('load', function () {
-                                try {
-                                    if (shouldCaptureUrl(this.__comixBrowseUrl)) {
-                                        captureText(this.responseText);
-                                    }
-                                } catch (e) {}
-                            });
-                            return originalSend.apply(this, arguments);
-                        };
-
-                        const originalParse = JSON.parse;
-                        const proxiedParse = new Proxy(originalParse, {
-                            apply(target, thisArg, args) {
-                                const parsed = Reflect.apply(target, thisArg, args);
-                                if (!expectedKeyword) capture(parsed);
-                                return parsed;
-                            }
-                        });
-                        JSON.parse = proxiedParse;
-                        return window[payloadKey] || null;
-                    })();
-                """.trimIndent()
-            },
-        ).parseAs<SearchResponse>()
+        val searchResponse = document.extractBrowseResponse()
+            ?: getBrowseResponseThroughApp(document, effectiveContentRating, expectedKeyword)
 
         val mangaList = searchResponse.result.items.map {
             it.toBasicSManga(preferences.posterQuality())
         }
         return MangasPage(mangaList, searchResponse.result.hasNextPage())
+    }
+
+    // On iPhone the hidden WebView can't reach the site (Tachimanga ignores the UA set on it, so Cloudflare and the
+    // site's third-party-app check block it). So the app downloads the site's code, the WebView only runs it until it
+    // builds its signed API URL, and the app makes that API call itself.
+    private suspend fun getBrowseResponseThroughApp(
+        document: Document,
+        contentRating: String,
+        expectedKeyword: String,
+    ): SearchResponse {
+        val (page, fileCount) = buildOfflinePage(document)
+        logStep("browse: $fileCount site files from the app")
+        val apiUrl = runInWebView(page) { passPayloadName, _, _ ->
+            """
+            (function () {
+                const key = 'settings_v2';
+                let settings = {};
+                try {
+                    settings = JSON.parse(localStorage.getItem(key) || '{}');
+                } catch (e) {}
+                settings.state = {
+                    ...(settings.state || {}),
+                    contentFilter: '$contentRating'
+                };
+                if (settings.version === undefined) settings.version = 0;
+                localStorage.setItem(key, JSON.stringify(settings));
+            })();
+            (function () {
+                const expectedKeyword = $expectedKeyword;
+                const report = rawUrl => {
+                    try {
+                        const url = new URL(rawUrl, location.origin);
+                        if (url.pathname !== '/api/v1/manga' || !url.searchParams.has('_')) return;
+                        if (expectedKeyword && url.searchParams.get('keyword') !== expectedKeyword) return;
+                        window.$passPayloadName(url.href);
+                    } catch (e) {}
+                };
+                const originalOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function (method, url) {
+                    report(String(url || ''));
+                    return originalOpen.apply(this, arguments);
+                };
+                const originalFetch = window.fetch;
+                if (typeof originalFetch === 'function') {
+                    window.fetch = function (input) {
+                        report(String(input && input.url || input));
+                        return originalFetch.apply(this, arguments);
+                    };
+                }
+                window.addEventListener('vite:preloadError', event => event.preventDefault());
+            })();
+            """.trimIndent()
+        }
+        logStep("browse: signed url ${apiUrl.toHttpUrl().encodedPath}")
+        val apiHeaders = headersBuilder()
+            .set("Accept", "application/json")
+            .set("X-Requested-With", "XMLHttpRequest")
+            .set("X-Rt", "0")
+            .build()
+        return client.get(apiUrl.toHttpUrl(), apiHeaders).parseAs<SearchResponse>().also {
+            logStep("browse: ${it.result.items.size} titles")
+        }
+    }
+
+    // The page with its module script replaced by the same files downloaded through the app, handed over in an import
+    // map, so the WebView never fetches the site's code itself. Relative imports become absolute so the map applies.
+    private suspend fun buildOfflinePage(document: Document): Pair<Document, Int> {
+        val page = document.clone()
+        val mainScript = page.selectFirst("script[type=module][src]") ?: throw Exception("Could not find the site's script")
+        val mainUrl = document.location().toHttpUrl().resolve(mainScript.attr("src"))
+            ?: throw Exception("Could not read the site's script address")
+        val files = LinkedHashMap<String, String>()
+        val queue = ArrayDeque(listOf(mainUrl))
+        while (queue.isNotEmpty()) {
+            val fileUrl = queue.removeFirst()
+            if (fileUrl.toString() in files) continue
+            files[fileUrl.toString()] = SCRIPT_IMPORT_REGEX.replace(siteScript(fileUrl)) { match ->
+                val target = fileUrl.resolve(match.groupValues[2]) ?: return@replace match.value
+                if (target.toString() !in files && target !in queue) queue += target
+                match.groupValues[1] + target + match.groupValues[3]
+            }
+        }
+        val imports = buildJsonObject {
+            files.forEach { (fileUrl, source) ->
+                put(fileUrl, "data:text/javascript;base64," + Base64.getEncoder().encodeToString(source.toByteArray()))
+            }
+        }
+        mainScript.remove()
+        page.head().appendElement("script").attr("type", "importmap")
+            .appendChild(DataNode(buildJsonObject { put("imports", imports) }.toString()))
+        page.head().appendElement("script").attr("type", "module")
+            .appendChild(DataNode("import ${JSONObject.quote(mainUrl.toString())};"))
+        return page to files.size
+    }
+
+    // Site code files are content-hashed, so a URL always holds the same code
+    private suspend fun siteScript(url: HttpUrl): String = siteScriptCache[url.toString()]
+        ?: client.get(url).body.string().also { siteScriptCache[url.toString()] = it }
+
+    private fun logStep(text: String) {
+        val time = LocalTime.now().withNano(0)
+        preferences.edit().putString(PREF_PROBE_STEP, "$time $text").apply()
     }
 
     private fun Document.extractBrowseResponse(): SearchResponse? {
@@ -1204,6 +1194,9 @@ abstract class Comix :
         private const val BRIDGE_RETRY_MS = 200
         private const val LOAD_PROBE_DELAY_MS = 1500
         private const val SHORT_UA_LENGTH = 60
+        private const val PREF_PROBE_STEP = "pref_probe_step"
+        private val SCRIPT_IMPORT_REGEX = Regex("""((?:from\s*|import\s*\(\s*|import\s*)["'])(\.{1,2}/[^"']+\.js)(["'])""")
+        private val siteScriptCache = ConcurrentHashMap<String, String>()
         private const val PAGE_UA_TAIL = 60
         private const val WEBVIEW_LOG_SIZE = 24
         private val SITE_HOSTS = setOf("comix.to", "comix.ws")
