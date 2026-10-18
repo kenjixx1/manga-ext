@@ -21,6 +21,7 @@ import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.NativeWebViewApi
+import keiyoushi.utils.applicationContext
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.booleanOrNull
 import keiyoushi.utils.firstInstanceOrNull
@@ -46,7 +47,9 @@ import okio.Buffer
 import org.json.JSONObject
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
+import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.time.LocalTime
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -118,25 +121,31 @@ abstract class Comix :
         } catch (e: Throwable) {
             recordProbe("$sent · failed: ${e.javaClass.name}: ${e.message}")
             if (e !is IOException || chain.call().isCanceled()) throw e
-            throw IOException(e.message.orEmpty() + request.cloudflareProbeInfo(), e)
+            val message = e.message.orEmpty()
+            val cloudflare = "cloudflare" in message.lowercase() || "request timeout" in message.lowercase()
+            throw IOException((if (cloudflare) CLOUDFLARE_HELP else message) + request.cloudflareProbeInfo(), e)
         }
         val challenged = response.header("cf-mitigated") != null
         recordProbe("$sent · HTTP ${response.code}${if (challenged) " (Cloudflare challenge)" else ""}")
         if (response.code in CLOUDFLARE_BLOCK_CODES && challenged) {
             response.close()
-            throw IOException("Cloudflare blocked (HTTP ${response.code})" + request.cloudflareProbeInfo())
+            throw IOException(CLOUDFLARE_HELP + request.cloudflareProbeInfo())
         }
         return response
     }
 
     private fun HttpUrl.isSiteHost() = host == baseUrlHost || host.removePrefix("www.") in SITE_HOSTS
 
-    private fun Request.cloudflareProbeInfo(): String {
-        val hasPass = client.cookieJar.loadForRequest(url).any { it.name == "cf_clearance" }
-        return " · ua: ${shortUserAgent(header("User-Agent").orEmpty())} · cf pass: ${if (hasPass) "yes" else "no"}"
-    }
+    private fun Request.cloudflareProbeInfo(): String = " · ua: ${shortUserAgent(header("User-Agent").orEmpty())} · cf pass: ${passSummary(url)}"
 
     private fun Long.toLocalDate() = java.time.Instant.ofEpochMilli(this).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+
+    // Which Cloudflare passes the app sends, in order, by the start of each value: "2 (k3J9Qa, x81bTr)"
+    private fun passSummary(url: HttpUrl): String {
+        val passes = client.cookieJar.loadForRequest(url).filter { it.name == "cf_clearance" }
+        if (passes.isEmpty()) return "no"
+        return "${passes.size} (${passes.joinToString(", ") { it.value.take(PASS_PREFIX_LENGTH) }})"
+    }
 
     // Short enough to read on a phone: "iPhone Safari 18.7.8 (app)"
     private fun shortUserAgent(ua: String): String {
@@ -153,8 +162,7 @@ abstract class Comix :
     // Three short parts, so each fits in the app's text box
     private fun probeParts(): List<String> {
         val siteUrl = baseUrl.toHttpUrl()
-        val pass = runCatching { client.cookieJar.loadForRequest(siteUrl).any { it.name == "cf_clearance" } }
-            .fold({ if (it) "yes" else "no" }, { "error: ${it.message}" })
+        val pass = runCatching { passSummary(siteUrl) }.getOrElse { "error: ${it.message}" }
         val lastRequest = preferences.getString(PREF_PROBE_LAST_REQUEST, null) ?: "none yet"
         val connection = "cf pass now: $pass\n" +
             "ua now: ${shortUserAgent(headers["User-Agent"].orEmpty())}\n" +
@@ -376,9 +384,27 @@ abstract class Comix :
         return page to files.size
     }
 
-    // Site code files are content-hashed, so a URL always holds the same code
-    private suspend fun siteScript(url: HttpUrl): String = siteScriptCache[url.toString()]
-        ?: client.get(url).body.string().also { siteScriptCache[url.toString()] = it }
+    // Site code files are content-hashed, so a URL always holds the same code. Kept on disk too: downloading all of
+    // them for every browse is a burst of requests that can make Cloudflare ask for a new check.
+    private suspend fun siteScript(url: HttpUrl): String {
+        val key = url.toString()
+        siteScriptCache[key]?.let { return it }
+        val file = File(siteScriptDir, sha256Hex(key) + ".js")
+        val source = runCatching { file.takeIf { it.isFile }?.readText() }.getOrNull()
+            ?: client.get(url).body.string().also { downloaded ->
+                runCatching {
+                    siteScriptDir.mkdirs()
+                    file.writeText(downloaded)
+                }
+            }
+        siteScriptCache[key] = source
+        return source
+    }
+
+    private val siteScriptDir get() = File(applicationContext.cacheDir, "comix-k-site-scripts")
+
+    private fun sha256Hex(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 
     private fun logStep(text: String) {
         val time = LocalTime.now().withNano(0)
@@ -1195,6 +1221,8 @@ abstract class Comix :
         private const val LOAD_PROBE_DELAY_MS = 1500
         private const val SHORT_UA_LENGTH = 60
         private const val PREF_PROBE_STEP = "pref_probe_step"
+        private const val PASS_PREFIX_LENGTH = 6
+        private const val CLOUDFLARE_HELP = "Cloudflare check needed: tap Web View, pass the check, then come back and tap Retry"
         private val SCRIPT_IMPORT_REGEX = Regex("""((?:from\s*|import\s*\(\s*|import\s*)["'])(\.{1,2}/[^"']+\.js)(["'])""")
         private val siteScriptCache = ConcurrentHashMap<String, String>()
         private const val PAGE_UA_TAIL = 60
