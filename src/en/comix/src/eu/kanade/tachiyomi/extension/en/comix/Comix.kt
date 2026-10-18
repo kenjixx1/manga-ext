@@ -103,6 +103,7 @@ abstract class Comix :
             }
             response
         }
+        .addNetworkInterceptor(::failureProbe)
         .rateLimit(2) { it.host == baseUrlHost }
         .rateLimit(5)
 
@@ -134,6 +135,22 @@ abstract class Comix :
         return response
     }
 
+    // Probe: the app's Cloudflare handler turns a failed reply into "Blocked by Cloudflare" before the outer probe
+    // sees it, so record the raw failed reply here, at the network level
+    private fun failureProbe(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val response = chain.proceed(request)
+        if (response.isSuccessful || !request.url.isSiteHost()) return response
+        val body = runCatching { response.peekBody(FAILURE_PEEK_BYTES).string() }.getOrDefault("")
+            .replace(Regex("\\s+"), " ").take(FAILURE_BODY_CHARS)
+        val mitigated = response.header("cf-mitigated")?.let { " cf-mitigated=$it" }.orEmpty()
+        val time = LocalTime.now().withNano(0)
+        preferences.edit()
+            .putString(PREF_PROBE_FAILURE, "$time ${request.url.encodedPath} HTTP ${response.code}$mitigated · $body")
+            .apply()
+        return response
+    }
+
     private fun HttpUrl.isSiteHost() = host == baseUrlHost || host.removePrefix("www.") in SITE_HOSTS
 
     private fun Request.cloudflareProbeInfo(): String = " · ua: ${shortUserAgent(header("User-Agent").orEmpty())} · cf pass: ${passSummary(url)}"
@@ -157,7 +174,15 @@ abstract class Comix :
     private fun recordProbe(text: String) {
         val time = LocalTime.now().withNano(0)
         preferences.edit().putString(PREF_PROBE_LAST_REQUEST, "$time $text").apply()
+        if (!text.endsWith("waiting")) appendRequestLog("$time $text")
     }
+
+    private fun appendRequestLog(line: String) = synchronized(requestLogLock) {
+        val lines = preferences.getString(PREF_PROBE_REQUEST_LOG, null)?.lines().orEmpty() + line
+        preferences.edit().putString(PREF_PROBE_REQUEST_LOG, lines.takeLast(REQUEST_LOG_SIZE).joinToString("\n")).apply()
+    }
+
+    private val requestLogLock = Any()
 
     // Three short parts, so each fits in the app's text box
     private fun probeParts(): List<String> {
@@ -167,10 +192,13 @@ abstract class Comix :
         val connection = "cf pass now: $pass\n" +
             "ua now: ${shortUserAgent(headers["User-Agent"].orEmpty())}\n" +
             "last request: $lastRequest\n" +
-            "last step: ${preferences.getString(PREF_PROBE_STEP, null) ?: "none yet"}"
+            "last step: ${preferences.getString(PREF_PROBE_STEP, null) ?: "none yet"}\n" +
+            "last failed reply: ${preferences.getString(PREF_PROBE_FAILURE, null) ?: "none yet"}"
         val webView = preferences.getString(PREF_PROBE_WEBVIEW, null)?.lines() ?: listOf("webview: none yet")
         val firstHalf = (webView.size + 1) / 2
+        val requestLog = preferences.getString(PREF_PROBE_REQUEST_LOG, null) ?: "none yet"
         return listOf(
+            requestLog,
             connection,
             webView.take(firstHalf).joinToString("\n"),
             webView.drop(firstHalf).joinToString("\n").ifEmpty { "(nothing more)" },
@@ -251,12 +279,9 @@ abstract class Comix :
         return response
     }
 
-    // Comix answers "Third-party apps are not supported" to non-Safari user agents. A Safari UA from the app is
-    // kept, because Cloudflare ties its pass cookie to the UA the user solved it with.
-    override fun Headers.Builder.configureHeaders(): Headers.Builder {
-        if (!get("User-Agent").orEmpty().isIphoneSafari()) set("User-Agent", IPHONE_SAFARI_UA)
-        return add("Accept", "*/*")
-    }
+    // Keep the app's user agent as is. Cloudflare ties its pass to the UA it was earned with, and the app's WebViews
+    // send the app's own UA (or the system one), so any UA set here only breaks the pass. Pick the UA in the app.
+    override fun Headers.Builder.configureHeaders() = add("Accept", "*/*")
 
     private fun String.isIphoneSafari() = "iPhone" in this && "Safari/" in this && "CriOS" !in this && "FxiOS" !in this
 
@@ -282,7 +307,9 @@ abstract class Comix :
         val expectedKeyword = JSONObject.quote(
             url.queryParameter("q") ?: url.queryParameter("keyword").orEmpty(),
         )
-        val searchResponse = document.extractBrowseResponse()
+        val fromPage = document.extractBrowseResponse()
+        logStep("browse page ${url.queryParameter("page")}: " + if (fromPage != null) "list was in the page (${fromPage.result.items.size})" else "list not in page, using the API")
+        val searchResponse = fromPage
             ?: getBrowseResponseThroughApp(document, effectiveContentRating, expectedKeyword)
 
         val mangaList = searchResponse.result.items.map {
@@ -409,6 +436,7 @@ abstract class Comix :
     private fun logStep(text: String) {
         val time = LocalTime.now().withNano(0)
         preferences.edit().putString(PREF_PROBE_STEP, "$time $text").apply()
+        appendRequestLog("$time step: $text")
     }
 
     private fun Document.extractBrowseResponse(): SearchResponse? {
@@ -1021,15 +1049,15 @@ abstract class Comix :
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // Stage 2 probe: tap a part to see it in a box that can be copied. Saved as the field's value first, because
         // the app shows a value that only lives in `text` as a placeholder that can't be selected
-        val partTitles = listOf("connection", "hidden browser, part 1", "hidden browser, part 2")
+        val partTitles = listOf("request log", "connection", "hidden browser, part 1", "hidden browser, part 2")
         probeParts().forEachIndexed { index, part ->
             val partKey = "$PREF_PROBE_VIEW${index + 1}"
             preferences.edit().putString(partKey, part).commit()
             EditTextPreference(screen.context).apply {
                 key = partKey
-                title = "Diagnostics ${index + 1} of 3: ${partTitles[index]}"
+                title = "Diagnostics ${index + 1} of ${partTitles.size}: ${partTitles[index]}"
                 summary = part
-                dialogTitle = "Diagnostics ${index + 1} of 3"
+                dialogTitle = "Diagnostics ${index + 1} of ${partTitles.size}"
                 setDefaultValue(part)
                 text = part
             }.let(screen::addPreference)
@@ -1222,6 +1250,11 @@ abstract class Comix :
         private const val SHORT_UA_LENGTH = 60
         private const val PREF_PROBE_STEP = "pref_probe_step"
         private const val PASS_PREFIX_LENGTH = 6
+        private const val PREF_PROBE_FAILURE = "pref_probe_failure"
+        private const val PREF_PROBE_REQUEST_LOG = "pref_probe_request_log"
+        private const val REQUEST_LOG_SIZE = 14
+        private const val FAILURE_PEEK_BYTES = 4096L
+        private const val FAILURE_BODY_CHARS = 160
         private const val CLOUDFLARE_HELP = "Cloudflare check needed: tap Web View, pass the check, then come back and tap Retry"
         private val SCRIPT_IMPORT_REGEX = Regex("""((?:from\s*|import\s*\(\s*|import\s*)["'])(\.{1,2}/[^"']+\.js)(["'])""")
         private val siteScriptCache = ConcurrentHashMap<String, String>()

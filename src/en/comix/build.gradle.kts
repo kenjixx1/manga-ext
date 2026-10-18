@@ -7,7 +7,7 @@ plugins {
 keiyoushi {
     name = "Comix K"
     pkgName = "en.comixk"
-    versionCode = 10
+    versionCode = 13
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
