@@ -104,7 +104,6 @@ abstract class Comix :
             }
             response
         }
-        .addNetworkInterceptor(::withoutSessionOnApi)
         .addNetworkInterceptor(::failureProbe)
         .rateLimit(2) { it.host == baseUrlHost }
         .rateLimit(5)
@@ -156,21 +155,6 @@ abstract class Comix :
             .putString(PREF_PROBE_FAILURE, "$time ${request.url.encodedPath} HTTP ${response.code}$mitigated · $body")
             .apply()
         return response
-    }
-
-    // The site can mark a session as a third-party app (it did after one request with a non-Safari UA), and then its
-    // API answers every request on that session with "third_party_app". The API needs no session, so leave it out.
-    private fun withoutSessionOnApi(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        val cookie = request.header("Cookie")
-        if (cookie == null || !request.url.isSiteHost() || !request.url.encodedPath.startsWith("/api/")) {
-            return chain.proceed(request)
-        }
-        val kept = cookie.split(';').map(String::trim).filterNot { it.startsWith("session=") }
-        val stripped = request.newBuilder()
-            .apply { if (kept.isEmpty()) removeHeader("Cookie") else header("Cookie", kept.joinToString("; ")) }
-            .build()
-        return chain.proceed(stripped)
     }
 
     private fun HttpUrl.isSiteHost() = host == baseUrlHost || host.removePrefix("www.") in SITE_HOSTS
@@ -375,19 +359,10 @@ abstract class Comix :
                         window.$passPayloadName(url.href);
                     } catch (e) {}
                 };
-                const originalOpen = XMLHttpRequest.prototype.open;
-                XMLHttpRequest.prototype.open = function (method, url) {
-                    report(String(url || ''));
-                    return originalOpen.apply(this, arguments);
-                };
-                const originalFetch = window.fetch;
-                if (typeof originalFetch === 'function') {
-                    window.fetch = function (input) {
-                        report(String(input && input.url || input));
-                        return originalFetch.apply(this, arguments);
-                    };
-                }
-                window.addEventListener('vite:preloadError', event => event.preventDefault());
+                // The site's code checks that fetch and XMLHttpRequest are untouched, so read the finished request list
+                // instead of hooking them. The request itself fails in this WebView, which is fine: only its URL is needed.
+                new PerformanceObserver(list => list.getEntries().forEach(entry => report(entry.name)))
+                    .observe({ type: 'resource', buffered: true });
             })();
             """.trimIndent()
         }
@@ -396,6 +371,8 @@ abstract class Comix :
             .set("Accept", "application/json")
             .set("X-Requested-With", "XMLHttpRequest")
             .set("X-Rt", "0")
+            .set("Referer", document.location())
+            .removeAll("Origin")
             .build()
         return client.get(apiUrl.toHttpUrl(), apiHeaders).parseAs<SearchResponse>().also {
             logStep("browse: ${it.result.items.size} titles")
@@ -915,8 +892,7 @@ abstract class Comix :
                 window.$passPayloadName = payload => window.$BRIDGE_SEND('$bridgeName', 'post', payload);
                 window.$rejectName = message => window.$BRIDGE_SEND('$errorBridgeName', 'post', message);
                 window.$touchName = points => window.$BRIDGE_SEND('$touchBridgeName', 'postMessage', points.join(","));
-                ${apiProbeScript(probeBridgeName)}
-                ${loadProbeScript(probeBridgeName)}
+                ${userAgentScript()}
                 ${pageScript(passPayloadName, rejectName, touchName)}
                 ${captureScript.orEmpty()}
             """.trimIndent()
@@ -980,76 +956,20 @@ abstract class Comix :
         })();
     """.trimIndent()
 
-    // Probe: the site's own code never called its API on iPhone, so check from inside the page whether its code files
-    // load and whether the page's own requests pass Cloudflare
-    private fun loadProbeScript(probeBridgeName: String) = """
-        (function () {
-            const report = text => window.$BRIDGE_SEND('$probeBridgeName', 'post', text);
-            const path = url => String(url).replace(location.origin, '');
-            window.addEventListener('error', event => {
-                const target = event.target;
-                if (target && target !== window && (target.src || target.href)) report('load failed ' + path(target.src || target.href));
-            }, true);
-            const check = async () => {
-                const scripts = [...document.querySelectorAll('script[src]')];
-                report('scripts ' + scripts.length + ' (' + scripts.filter(s => s.type === 'module').length + ' module), asset loads ' +
-                    performance.getEntriesByType('resource').filter(e => e.name.includes('/assets/')).length);
-                const main = scripts.map(s => s.src).find(src => /[/]assets[/].*[.]js/.test(src));
-                for (const url of [main, '/api/v1/user'].filter(Boolean)) {
-                    try {
-                        const response = await fetch(url, { credentials: 'include' });
-                        const body = await response.text();
-                        report('fetch ' + path(url) + ' ' + response.status + (response.status >= 400 ? ' ' + body.slice(0, 80).replace(/[\s]+/g, ' ') : ''));
-                    } catch (e) {
-                        report('fetch ' + path(url) + ' error ' + e);
-                    }
-                }
-            };
-            if (document.readyState === 'complete') setTimeout(check, $LOAD_PROBE_DELAY_MS);
-            else window.addEventListener('load', () => setTimeout(check, $LOAD_PROBE_DELAY_MS), { once: true });
-        })();
-    """.trimIndent()
-
-    // Probe: report the status of the site's own API calls (and page errors) from inside the WebView
-    private fun apiProbeScript(probeBridgeName: String) = """
-        (function () {
-            const report = text => window.$BRIDGE_SEND('$probeBridgeName', 'post', text);
-            const describe = (rawUrl, status, body) => {
-                try {
-                    const path = new URL(rawUrl || '', location.origin).pathname;
-                    if (!path.startsWith('/api/')) return;
-                    report('api ' + path + ' ' + status + (status >= 400 ? ' ' + String(body).slice(0, 100) : ''));
-                } catch (e) {}
-            };
-            const originalFetch = window.fetch;
-            if (typeof originalFetch === 'function') {
-                window.fetch = function () {
-                    return originalFetch.apply(this, arguments).then(response => {
-                        response.clone().text().then(body => describe(response.url, response.status, body)).catch(() => {});
-                        return response;
-                    }, error => {
-                        report('api fetch error ' + error);
-                        throw error;
-                    });
-                };
-            }
-            const originalOpen = XMLHttpRequest.prototype.open;
-            const originalSend = XMLHttpRequest.prototype.send;
-            XMLHttpRequest.prototype.open = function (method, url) {
-                this.__probeUrl = String(url || '');
-                return originalOpen.apply(this, arguments);
-            };
-            XMLHttpRequest.prototype.send = function () {
-                this.addEventListener('loadend', function () {
-                    let body = '';
-                    try { body = this.responseText; } catch (e) {}
-                    describe(this.__probeUrl, this.status, body);
-                });
-                return originalSend.apply(this, arguments);
-            };
-            window.addEventListener('error', event => report('js error ' + (event.message || '')));
-        })();
-    """.trimIndent()
+    // The hidden WebView reports the system UA, while the app's requests carry the app's UA. The site's code reads
+    // navigator.userAgent, so show it the app's UA to keep the two consistent.
+    private fun userAgentScript(): String {
+        val appUserAgent = headers["User-Agent"] ?: return ""
+        return """
+            (function () {
+                const ua = ${JSONObject.quote(appUserAgent)};
+                if (navigator.userAgent === ua) return;
+                const proto = Object.getPrototypeOf(navigator);
+                Object.defineProperty(proto, 'userAgent', { get: () => ua, configurable: true, enumerable: true });
+                Object.defineProperty(proto, 'appVersion', { get: () => ua.replace(/^Mozilla\\//, ''), configurable: true, enumerable: true });
+            })();
+        """.trimIndent()
+    }
 
     private fun randomName() = (1..(10..20).random())
         .map { (('a'..'z') + ('A'..'Z')).random() }
@@ -1268,7 +1188,6 @@ abstract class Comix :
         private const val PREF_PROBE_WEBVIEW = "pref_probe_webview"
         private const val BRIDGE_SEND = "__comixKSend"
         private const val BRIDGE_RETRY_MS = 200
-        private const val LOAD_PROBE_DELAY_MS = 1500
         private const val SHORT_UA_LENGTH = 60
         private const val PREF_PROBE_STEP = "pref_probe_step"
         private const val PASS_PREFIX_LENGTH = 6
