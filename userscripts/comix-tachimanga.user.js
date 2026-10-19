@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Comix Tachimanga Skin
 // @description  Makes comix.to look and work like Tachimanga on an iPhone: a page switcher in the title, Library with chapters left and resume buttons, folder tabs, Browse ratings, History by day, a clean title page and reader.
-// @version      1.1.1
+// @version      1.1.2
 // @match        https://comix.to/*
 // @match        https://comix.ws/*
 // @run-at       document-start
@@ -24,6 +24,7 @@
     const POPULAR = '/browse?order%5Bscore%5D=desc';
     const LATEST = '/browse?order%5Bchapter_updated_at%5D=desc';
     const COUNTS_KEY = 'ckFolderCounts2';
+    const FOLDER_ORDER = ['All', 'Plan to Read', 'Reading', 'On-Hold', 'Completed', 'Dropped'];
     const RESUME_KEY = 'ckResume';
     const HOME_KEY = 'ckHomeLibrary';
     const FROM_KEY = 'ckFrom';
@@ -436,7 +437,7 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
   <h2>Skin</h2>
   <div class="ck-group"><button class="ck-row" id="ck-home" role="switch" aria-checked="${homeOpensLibrary()}">${svg('<path d="M4 11l8-7 8 7v9H4z"/>', LINE)}<span>Open Library first</span><span class="ck-switch"></span></button></div>
   ${groups}
-  <p class="ck-note">Comix Tachimanga Skin 1.1.1</p>
+  <p class="ck-note">Comix Tachimanga Skin 1.1.2</p>
 </div>`);
         box.querySelector('#ck-home').addEventListener('click', (e) => {
             const on = e.currentTarget.getAttribute('aria-checked') !== 'true';
@@ -557,6 +558,9 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
         for (const b of buttons) {
             const n = counts[b.textContent.trim()];
             setAttr(b, 'data-ck-count', n === undefined ? null : n);
+            // Kenji's folder order, left to right
+            const pos = FOLDER_ORDER.indexOf(b.textContent.trim());
+            if (pos >= 0 && b.style.order !== String(pos)) b.style.order = pos;
         }
         let line = total === null ? '' : `${total.toLocaleString('en-US')} title${total === 1 ? '' : 's'}`;
         if (total !== null && rows.length === total && rows.length) line += ` · ${left.toLocaleString('en-US')} chapters left`;
