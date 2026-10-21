@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Comix Tachimanga Skin
-// @description  Makes comix.to look and work like Tachimanga on an iPhone: Purple night colours, a page switcher in the title, Library with chapters left and resume buttons, Browse with shelves, a filter sheet and saved filters, History by day, a clean title page and reader.
-// @version      1.2.0
+// @description  Makes comix.to look and work like Tachimanga on an iPhone: Purple night colours, a page switcher in the title, Library with a Recent tab, chapters left and resume buttons, Browse with shelves, a filter sheet and saved filters, History by day, a clean title page and reader.
+// @version      1.3.0
 // @match        https://comix.to/*
 // @match        https://comix.ws/*
 // @run-at       document-start
@@ -25,6 +25,8 @@
     const DISCOVER = '/#ck-discover';
     const COUNTS_KEY = 'ckFolderCounts2';
     const FOLDER_ORDER = ['All', 'Plan to Read', 'Reading', 'On-Hold', 'Completed', 'Dropped'];
+    const FOLDER_IDS = { 'Reading': 1, 'Completed': 2, 'On-Hold': 3, 'Dropped': 4, 'Plan to Read': 5 };
+    const RECENT = '/user?tab=titles&sort=read_desc';
     const RESUME_KEY = 'ckResume';
     const HOME_KEY = 'ckHomeLibrary';
     const FROM_KEY = 'ckFrom';
@@ -183,6 +185,8 @@ html.ck-p-lib .uview__folders-row::after { content: ""; position: absolute; righ
 html.ck-p-lib .uview__folders .useg { background: transparent !important; padding: 0 16px !important; gap: 20px !important; border-radius: 0 !important; }
 html.ck-p-lib .uview__folders .useg__btn { background: transparent !important; color: var(--ck-sub) !important; border-radius: 0 !important; padding: 9px 0 10px !important; font-size: 15px !important; box-shadow: none !important; display: inline-flex !important; gap: 5px; align-items: baseline; white-space: nowrap; }
 html.ck-p-lib .uview__folders .useg__btn.is-on { color: var(--ck-strong) !important; font-weight: 600 !important; box-shadow: inset 0 -2px 0 var(--ck-on) !important; }
+html.ck-p-lib .uview__folders a.ck-recent { order: -1; text-decoration: none; }
+html.ck-p-lib.ck-lib-recent .uview__folders button.useg__btn.is-on { color: var(--ck-sub) !important; font-weight: 400 !important; box-shadow: none !important; }
 html.ck-p-lib .uview__folders .useg__btn[data-ck-count]::after { content: attr(data-ck-count); color: var(--ck-sub); font-weight: 400; }
 html.ck-p-lib .uview__folders .useg__btn[data-ck-count="0"]::after { color: var(--ck-line2); }
 html.ck-p-lib .uview__filter-block, html.ck-p-lib .uview__sort-tabs { padding: 8px 12px !important; margin: 0 !important; }
@@ -709,7 +713,7 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
   <h2>Saved filters</h2>
   <div class="ck-group" id="ck-presets"></div>
   ${groups}
-  <p class="ck-note">Comix Tachimanga Skin 1.2.0 · Purple night</p>
+  <p class="ck-note">Comix Tachimanga Skin 1.3.0 · Purple night</p>
 </div>`);
         box.querySelector('#ck-home').addEventListener('click', (e) => {
             const on = e.currentTarget.getAttribute('aria-checked') !== 'true';
@@ -777,6 +781,17 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
 
     function decorateLibrary() {
         markTools(['.uview__filter-block', '.uview__sort-tabs']);
+        // Recent: the whole library, last read first (comix.to's own "Recently read" sort)
+        const params = new URLSearchParams(location.search);
+        const recent = params.get('sort') === 'read_desc' && !params.get('folder');
+        root.classList.toggle('ck-lib-recent', recent);
+        const seg = document.querySelector('.uview__folders .useg');
+        let tab = seg && seg.querySelector('a.ck-recent');
+        if (seg && !tab) {
+            tab = el(`<a class="ck-recent useg__btn" href="${RECENT}">Recent</a>`);
+            seg.prepend(tab);
+        }
+        if (tab) tab.classList.toggle('is-on', recent);
         const resume = readStore(RESUME_KEY);
         const rows = [...document.querySelectorAll('li.ulrow')];
         let left = 0;
@@ -803,7 +818,7 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
             }
             body.classList.add('ck-bar');
             setVar(body, '--ck-p', pct);
-            setAttr(row, 'data-ck-group', group);
+            setAttr(row, 'data-ck-group', recent ? null : group);
             setAttr(meta, 'data-ck-bold', bold);
             setAttr(meta, 'data-ck-rest', rest);
 
@@ -833,7 +848,7 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
         }
 
         // Folder counts: the site says "27 titles in your library." for the folder on screen; remember it
-        const buttons = [...document.querySelectorAll('.uview__folders .useg__btn')];
+        const buttons = [...document.querySelectorAll('.uview__folders button.useg__btn')];
         const counts = readStore(COUNTS_KEY);
         const active = buttons.find(b => b.classList.contains('is-on'));
         const sub = document.querySelector('.uview__sub');
@@ -851,7 +866,8 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
             if (pos >= 0 && b.style.order !== String(pos)) b.style.order = pos;
         }
         let line = total === null ? '' : `${total.toLocaleString('en-US')} title${total === 1 ? '' : 's'}`;
-        if (total !== null && rows.length === total && rows.length) line += ` · ${left.toLocaleString('en-US')} chapters left`;
+        if (recent) line = 'Last read first' + (line ? ` · ${line}` : '');
+        else if (total !== null && rows.length === total && rows.length) line += ` · ${left.toLocaleString('en-US')} chapters left`;
         setText(document.getElementById('ck-sub'), line);
     }
 
@@ -1142,6 +1158,17 @@ html.ck-p-reader.ck-ui #ck-rtop { display: grid; position: fixed; left: 0; right
         setText(document.getElementById('ck-rch'), parts[1] || '');
         saveResume(titleId(location.pathname), location.pathname, chapterFrom(location.pathname));
     }
+
+    // Leaving Recent through a folder tab: open that folder in its normal order, not last-read order
+    document.addEventListener('click', (event) => {
+        if (!root.classList.contains('ck-lib-recent')) return;
+        const b = event.target.closest('.uview__folders button.useg__btn');
+        if (!b) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const id = FOLDER_IDS[b.textContent.trim()];
+        location.assign(LIBRARY + (id ? `&folder=${id}` : ''));
+    }, true);
 
     // Reader: a tap on the page (not on a control) shows or hides the bars
     document.addEventListener('click', (event) => {
